@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whetstone"
+version = "0.1.0"
+description = "AI-powered code builder — describe what you want, get working code."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Whetstone Contributors" },
+]
+keywords = ["ai", "code-generation", "llm", "agent", "builder"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40.0"]
+embeddings = ["sentence-transformers>=2.2.0"]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5.0",
+]
+all = [
+    "whetstone[anthropic,embeddings,dev]",
+]
+
+[project.scripts]
+whetstone = "builder_agent.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Nandansai08/whetstone"
+Repository = "https://github.com/Nandansai08/whetstone"
+Issues = "https://github.com/Nandansai08/whetstone/issues"
+
+[tool.setuptools.packages.find]
+include = ["builder_agent*"]
+
+[tool.pytest.ini_options]
+testpaths = ["builder_agent/tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
