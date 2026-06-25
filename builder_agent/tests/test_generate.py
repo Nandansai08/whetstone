@@ -17,38 +17,40 @@ SUBTASK = SubTask(
 )
 
 
-def _fake_generate(prompt, *, model, system="", max_tokens=4096):
-    return "def add(a, b): return a + b"
+def _fake_generate_stream(prompt, *, model, system="", max_tokens=4096):
+    yield "def add("
+    yield "a, b): "
+    yield "return a + b"
 
 
 def _fake_critique(prompt, *, model, system="", max_tokens=4096):
     return "def add(a, b):\n    return a + b"
 
 
-@patch("builder_agent.generate.ask", side_effect=_fake_generate)
-def test_generate_returns_code(mock_ask):
+@patch("builder_agent.generate.ask_stream", side_effect=_fake_generate_stream)
+def test_generate_returns_code(mock_ask_stream):
     code = generate(SUBTASK, SPEC)
     assert "def add" in code
-    mock_ask.assert_called_once()
+    mock_ask_stream.assert_called_once()
 
 
-@patch("builder_agent.generate.ask", side_effect=_fake_generate)
-def test_generate_threads_feedback(mock_ask):
+@patch("builder_agent.generate.ask_stream", side_effect=_fake_generate_stream)
+def test_generate_threads_feedback(mock_ask_stream):
     generate(SUBTASK, SPEC, feedback="TypeError on line 3")
-    prompt_arg = mock_ask.call_args[0][0]
+    prompt_arg = mock_ask_stream.call_args[0][0]
     assert "TypeError on line 3" in prompt_arg
     assert "Previous attempt failed" in prompt_arg
 
 
-@patch("builder_agent.generate.ask", side_effect=_fake_generate)
-def test_generate_no_feedback_block_when_none(mock_ask):
+@patch("builder_agent.generate.ask_stream", side_effect=_fake_generate_stream)
+def test_generate_no_feedback_block_when_none(mock_ask_stream):
     generate(SUBTASK, SPEC, feedback=None)
-    prompt_arg = mock_ask.call_args[0][0]
+    prompt_arg = mock_ask_stream.call_args[0][0]
     assert "Previous attempt failed" not in prompt_arg
 
 
-@patch("builder_agent.generate.ask", side_effect=_fake_generate)
-def test_generate_includes_memory_hints(mock_ask):
+@patch("builder_agent.generate.ask_stream", side_effect=_fake_generate_stream)
+def test_generate_includes_memory_hints(mock_ask_stream):
     hint = MemoryRecord(
         request="calc",
         output_type="python_module",
@@ -59,16 +61,27 @@ def test_generate_includes_memory_hints(mock_ask):
         embedding=[],
     )
     generate(SUBTASK, SPEC, memory_hints=[hint])
-    prompt_arg = mock_ask.call_args[0][0]
+    prompt_arg = mock_ask_stream.call_args[0][0]
     assert "added return statement" in prompt_arg
     assert "Hints from similar past builds" in prompt_arg
 
 
-@patch("builder_agent.generate.ask", side_effect=_fake_generate)
-def test_generate_empty_hints_no_hints_block(mock_ask):
+@patch("builder_agent.generate.ask_stream", side_effect=_fake_generate_stream)
+def test_generate_empty_hints_no_hints_block(mock_ask_stream):
     generate(SUBTASK, SPEC, memory_hints=[])
-    prompt_arg = mock_ask.call_args[0][0]
+    prompt_arg = mock_ask_stream.call_args[0][0]
     assert "Hints from similar past builds" not in prompt_arg
+
+
+@patch("builder_agent.generate.ask_stream", side_effect=_fake_generate_stream)
+def test_generate_invokes_on_chunk(mock_ask_stream):
+    chunks_received = []
+    def callback(chunk):
+        chunks_received.append(chunk)
+
+    code = generate(SUBTASK, SPEC, on_chunk=callback)
+    assert code == "def add(a, b): return a + b"
+    assert chunks_received == ["def add(", "a, b): ", "return a + b"]
 
 
 @patch("builder_agent.generate.ask", side_effect=_fake_critique)

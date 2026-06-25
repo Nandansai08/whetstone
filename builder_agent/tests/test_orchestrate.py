@@ -414,3 +414,34 @@ def test_retrieve_plan_type_filter(
 
     assert all(r.record_type == "plan" for r in plan_only)
     assert all(r.record_type == "subtask" for r in subtask_only)
+
+
+def test_orchestrate_subtask_emits_chunks():
+    events = []
+
+    def on_progress(event, data):
+        events.append((event, data))
+
+    verify_responses = iter([
+        "assert True",
+        json.dumps({"score": 9, "issues": []}),
+    ])
+
+    from unittest.mock import patch
+
+    from builder_agent.orchestrate import orchestrate_subtask
+
+    chunks_gen = (c for c in ["chunk1", "chunk2"])
+
+    with patch("builder_agent.verify.run_code", return_value=(True, "ok")), \
+         patch("builder_agent.generate.ask_stream", return_value=chunks_gen), \
+         patch("builder_agent.verify.ask",
+               side_effect=lambda p, **kw: next(verify_responses)):
+
+        orchestrate_subtask(SUBTASK, SPEC, on_progress=on_progress)
+
+    chunk_events = [e for e in events if e[0] == "chunk"]
+    assert len(chunk_events) == 2
+    assert chunk_events[0][1]["chunk"] == "chunk1"
+    assert chunk_events[1][1]["chunk"] == "chunk2"
+    assert chunk_events[0][1]["subtask"] == SUBTASK.id
