@@ -25,6 +25,12 @@ WORKER = ModelConfig("anthropic", "claude-sonnet-4-6")
 JUDGE = ModelConfig("openai", "gpt-4o")
 
 
+def _ask_stream_mock_wrapper(mock_ask):
+    def stream_side_effect(*args, **kwargs):
+        yield mock_ask(*args, **kwargs)
+    return stream_side_effect
+
+
 class _StubEmbedder:
     def __init__(self, dim: int = 8):
         self._dim = dim
@@ -48,14 +54,16 @@ def _tmp_memory() -> Memory:
 # ---- M2 tests: orchestrate_subtask ----
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
 @patch("builder_agent.generate.ask")
 @patch("builder_agent.verify.ask")
 def test_subtask_exits_early_on_pass(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     mock_gen_ask.return_value = "def add(a,b): return a+b"
     mock_verify_ask.side_effect = [
         "assert True",
@@ -67,6 +75,7 @@ def test_subtask_exits_early_on_pass(
     assert result["iterations"] == 1
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.config.MAX_ITERATIONS", 3)
@@ -74,8 +83,9 @@ def test_subtask_exits_early_on_pass(
 @patch("builder_agent.generate.ask", return_value="bad code")
 @patch("builder_agent.verify.ask", return_value="assert False")
 def test_subtask_respects_max_iterations(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     from builder_agent.orchestrate import orchestrate_subtask
     result = orchestrate_subtask(SUBTASK, SPEC)
     assert result["succeeded"] is False
@@ -83,6 +93,7 @@ def test_subtask_respects_max_iterations(
     assert result["attempt"] is not None
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.config.MAX_ITERATIONS", 3)
@@ -90,8 +101,9 @@ def test_subtask_respects_max_iterations(
 @patch("builder_agent.generate.ask")
 @patch("builder_agent.verify.ask")
 def test_subtask_feeds_issues_as_feedback(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     call_count = [0]
 
     def gen_side_effect(prompt, *, model, system="", max_tokens=4096):
@@ -118,6 +130,7 @@ def test_subtask_feeds_issues_as_feedback(
     assert "NameError" in iter1_gen_prompt
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.config.MAX_ITERATIONS", 3)
@@ -125,8 +138,9 @@ def test_subtask_feeds_issues_as_feedback(
 @patch("builder_agent.generate.ask", return_value="code")
 @patch("builder_agent.verify.ask")
 def test_subtask_best_so_far_tracks_highest(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     scores = iter([
         "assert True", json.dumps({"score": 5, "issues": ["meh"]}),
         "assert True", json.dumps({"score": 7, "issues": ["ok"]}),
@@ -140,14 +154,16 @@ def test_subtask_best_so_far_tracks_highest(
     assert result["attempt"].verdict.score == 7
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
 @patch("builder_agent.generate.ask")
 @patch("builder_agent.verify.ask")
 def test_subtask_worker_judge_different_providers(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     models_seen = []
 
     def track_gen(prompt, *, model, system="", max_tokens=4096):
@@ -178,6 +194,7 @@ def test_subtask_worker_judge_different_providers(
 # ---- M3 tests: memory integration ----
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
@@ -185,8 +202,9 @@ def test_subtask_worker_judge_different_providers(
 @patch("builder_agent.verify.ask")
 @patch("builder_agent.orchestrate.ask", return_value="fixed return value")
 def test_subtask_stores_memory_on_pass(
-    mock_orch_ask, mock_verify_ask, mock_gen_ask, mock_run,
+    mock_orch_ask, mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     mock_verify_ask.side_effect = [
         "assert True",
         json.dumps({"score": 9, "issues": []}),
@@ -199,14 +217,16 @@ def test_subtask_stores_memory_on_pass(
     assert len(records) == 1
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
 @patch("builder_agent.generate.ask", return_value="code")
 @patch("builder_agent.verify.ask")
 def test_subtask_no_memory_works_like_m2(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     mock_verify_ask.side_effect = [
         "assert True",
         json.dumps({"score": 9, "issues": []}),
@@ -263,6 +283,7 @@ def _passing_verify(prompt, *, model, system="", max_tokens=4096):
     return "assert True"
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
@@ -272,8 +293,9 @@ def _passing_verify(prompt, *, model, system="", max_tokens=4096):
 @patch("builder_agent.verify.ask")
 def test_orchestrate_runs_all_subtasks_integrates_verifies(
     mock_verify_ask, mock_gen_ask, mock_plan_ask,
-    mock_clarify_ask, mock_run,
+    mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     verify_responses = []
     # 3 subtasks * (make_tests + judge) + final verify (make_tests + judge)
     for _ in range(4):
@@ -292,6 +314,7 @@ def test_orchestrate_runs_all_subtasks_integrates_verifies(
     assert len(result["subtask_results"]) == 3
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.config.MAX_ITERATIONS", 2)
@@ -302,8 +325,9 @@ def test_orchestrate_runs_all_subtasks_integrates_verifies(
 @patch("builder_agent.verify.ask", return_value="assert False")
 def test_orchestrate_halts_on_failed_subtask(
     mock_verify_ask, mock_gen_ask, mock_plan_ask,
-    mock_clarify_ask, mock_run,
+    mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     from builder_agent.orchestrate import orchestrate
     result = orchestrate("build calculator", interactive=False)
 
@@ -313,6 +337,7 @@ def test_orchestrate_halts_on_failed_subtask(
     assert result["final_verdict"] is None
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
@@ -323,8 +348,9 @@ def test_orchestrate_halts_on_failed_subtask(
 @patch("builder_agent.orchestrate.ask", return_value="fix summary")
 def test_orchestrate_stores_subtask_and_plan_records(
     mock_orch_ask, mock_verify_ask, mock_gen_ask,
-    mock_plan_ask, mock_clarify_ask, mock_run,
+    mock_plan_ask, mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     verify_responses = []
     for _ in range(4):
         verify_responses.append("assert True")
@@ -345,6 +371,7 @@ def test_orchestrate_stores_subtask_and_plan_records(
     assert len(plan_recs) == 1
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
@@ -354,8 +381,9 @@ def test_orchestrate_stores_subtask_and_plan_records(
 @patch("builder_agent.verify.ask")
 def test_final_verify_uses_spec_criteria(
     mock_verify_ask, mock_gen_ask, mock_plan_ask,
-    mock_clarify_ask, mock_run,
+    mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     verify_calls = []
 
     def track_verify(prompt, *, model, system="", max_tokens=4096):
@@ -435,6 +463,7 @@ def test_orchestrate_subtask_emits_chunks():
 
     with patch("builder_agent.verify.run_code", return_value=(True, "ok")), \
          patch("builder_agent.generate.ask_stream", return_value=chunks_gen), \
+         patch("builder_agent.generate.ask", return_value="chunk1chunk2"), \
          patch("builder_agent.verify.ask",
                side_effect=lambda p, **kw: next(verify_responses)):
 

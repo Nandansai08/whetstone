@@ -322,7 +322,7 @@ def _ask_stream_openai(
             stream=True,
             stream_options={"include_usage": True},
         )
-    except Exception:
+    except TypeError:
         response = client.chat.completions.create(
             model=model.model_id,
             messages=messages,

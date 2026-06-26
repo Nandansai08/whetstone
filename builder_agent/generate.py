@@ -68,11 +68,15 @@ def generate(
         hints_block=hints_block,
     )
     model = worker_model or config.WORKER_MODEL
+    if on_chunk is None:
+        return strip_fences(
+            ask(prompt, model=model, system=_GENERATE_SYSTEM)
+        )
+
     chunks = []
     for chunk in ask_stream(prompt, model=model, system=_GENERATE_SYSTEM):
         chunks.append(chunk)
-        if on_chunk:
-            on_chunk(chunk)
+        on_chunk(chunk)
     return strip_fences("".join(chunks))
 
 

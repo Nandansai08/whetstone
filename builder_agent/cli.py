@@ -213,6 +213,7 @@ class ProgressRenderer:
             for i, part in enumerate(parts):
                 if i > 0:
                     sys.stdout.write("\n")
+                    sys.stdout.flush()
                     self._start_of_line = True
                 if part:
                     if self._start_of_line:
