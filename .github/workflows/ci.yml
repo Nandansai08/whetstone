@@ -35,7 +35,7 @@ jobs:
             ${{ runner.os }}-pip-${{ matrix.python-version }}-
 
       - name: Install dependencies
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[all]"
 
       - name: Lint
         run: ruff check builder_agent/
