@@ -251,12 +251,17 @@ def orchestrate_subtask(
 
 def _run_async(coro):
     try:
-        return asyncio.run(coro)
+        loop = asyncio.get_running_loop()
     except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(asyncio.run, coro)
             return future.result()
+    else:
+        return asyncio.run(coro)
 
 
 async def _async_orchestrate(
@@ -293,7 +298,7 @@ async def _async_orchestrate(
     any_failed = False
 
     while ready_ids or active_tasks:
-        while ready_ids:
+        while ready_ids and not any_failed:
             st_id = ready_ids.pop(0)
             subtask = subtask_by_id[st_id]
 

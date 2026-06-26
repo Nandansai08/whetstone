@@ -650,3 +650,95 @@ def test_budget_exceeded_concurrency():
 
          res = orchestrate("test budget", interactive=False, budget=budget)
          assert res["succeeded"] is False
+
+
+def test_scheduler_stops_on_failure():
+    import time
+    from unittest.mock import MagicMock, patch
+
+    from builder_agent.orchestrate import orchestrate
+    from builder_agent.schemas import Plan, SubTask
+
+    # t1 and t3 are independent. t2 depends on t1.
+    plan = Plan(subtasks=[
+        SubTask(
+            id="t1",
+            description="task 1",
+            acceptance_criteria=["c1"],
+            depends_on=[],
+        ),
+        SubTask(
+            id="t2",
+            description="task 2",
+            acceptance_criteria=["c2"],
+            depends_on=["t1"],
+        ),
+        SubTask(
+            id="t3",
+            description="task 3",
+            acceptance_criteria=["c3"],
+            depends_on=[],
+        ),
+    ])
+
+    history = []
+
+    def mock_orchestrate_subtask(subtask, *args, **kwargs):
+        history.append((subtask.id, "start"))
+        if subtask.id == "t3":
+            # t3 fails immediately
+            history.append((subtask.id, "end"))
+            return {
+                "succeeded": False,
+                "attempt": MagicMock(code="code"),
+                "iterations": 1,
+                "escalated": False,
+                "aborted_reason": "failed_t3",
+            }
+        elif subtask.id == "t1":
+            # t1 succeeds after a small delay to ensure t3 fails first
+            time.sleep(0.1)
+            history.append((subtask.id, "end"))
+            return {
+                "succeeded": True,
+                "attempt": MagicMock(code="code"),
+                "iterations": 1,
+                "escalated": False,
+                "aborted_reason": None,
+            }
+        elif subtask.id == "t2":
+            history.append((subtask.id, "end"))
+            return {
+                "succeeded": True,
+                "attempt": MagicMock(code="code"),
+                "iterations": 1,
+                "escalated": False,
+                "aborted_reason": None,
+            }
+
+    with patch("builder_agent.orchestrate.clarify", return_value=SPEC), \
+         patch("builder_agent.orchestrate.make_plan", return_value=plan), \
+         patch(
+             "builder_agent.orchestrate.orchestrate_subtask",
+             side_effect=mock_orchestrate_subtask,
+         ), \
+         patch("builder_agent.orchestrate.integrate", return_value="integrated"), \
+         patch("builder_agent.orchestrate.verify") as mock_verify:
+
+         mock_verify_verdict = MagicMock()
+         mock_verify_verdict.passed = True
+         mock_verify.return_value = mock_verify_verdict
+
+         result = orchestrate("test failure stop", interactive=False)
+
+         # The orchestration should fail because t3 failed
+         assert result["succeeded"] is False
+
+         # t1 and t3 should have started and ended
+         assert ("t1", "start") in history
+         assert ("t1", "end") in history
+         assert ("t3", "start") in history
+         assert ("t3", "end") in history
+
+         # t2 should NOT have started because t3 failed before t1 finished to unblock t2
+         assert ("t2", "start") not in history
