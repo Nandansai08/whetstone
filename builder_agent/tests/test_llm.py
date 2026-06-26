@@ -1,9 +1,11 @@
+import asyncio
 import os
 from unittest.mock import MagicMock, patch
 
 from builder_agent.config import ModelConfig
 from builder_agent.llm import (
     ask,
+    async_ask,
     embed,
     extract_json,
     register_embed_provider,
@@ -280,3 +282,53 @@ def test_extract_json_string_with_braces():
     import json
     data = json.loads(result)
     assert data["msg"] == "use {x} and }"
+
+
+def test_async_ask_fallback():
+    custom_model = ModelConfig("custom_fallback", "some-model")
+
+    with patch("builder_agent.llm.ask") as mock_ask:
+        mock_ask.return_value = "sync fallback response"
+        res = asyncio.run(
+            async_ask("hello", model=custom_model, system="be quiet", max_tokens=100)
+        )
+        assert res == "sync fallback response"
+        mock_ask.assert_called_once_with(
+            "hello", model=custom_model, system="be quiet", max_tokens=100
+        )
+
+
+@patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+@patch("openai.AsyncOpenAI")
+def test_async_ask_openai(mock_cls):
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.choices = [MagicMock()]
+    mock_response.choices[0].message.content = "openai async response"
+
+    async def mock_create(*args, **kwargs):
+        return mock_response
+
+    mock_client.chat.completions.create = mock_create
+    mock_cls.return_value = mock_client
+
+    res = asyncio.run(async_ask("hi", model=OPENAI_MODEL))
+    assert res == "openai async response"
+
+
+@patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})
+@patch("anthropic.AsyncAnthropic")
+def test_async_ask_anthropic(mock_cls):
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    mock_response.content = [MagicMock()]
+    mock_response.content[0].text = "anthropic async response"
+
+    async def mock_create(*args, **kwargs):
+        return mock_response
+
+    mock_client.messages.create = mock_create
+    mock_cls.return_value = mock_client
+
+    res = asyncio.run(async_ask("hi", model=ANTHROPIC_MODEL))
+    assert res == "anthropic async response"

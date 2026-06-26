@@ -414,3 +414,239 @@ def test_retrieve_plan_type_filter(
 
     assert all(r.record_type == "plan" for r in plan_only)
     assert all(r.record_type == "subtask" for r in subtask_only)
+
+
+def test_parallel_scheduling_and_dependencies():
+    import threading
+    import time
+    from unittest.mock import MagicMock, patch
+
+    from builder_agent.orchestrate import orchestrate
+    from builder_agent.schemas import Plan, SubTask
+
+    plan = Plan(subtasks=[
+        SubTask(
+            id="t1",
+            description="task 1",
+            acceptance_criteria=["c1"],
+            depends_on=[],
+        ),
+        SubTask(
+            id="t2",
+            description="task 2",
+            acceptance_criteria=["c2"],
+            depends_on=["t1"],
+        ),
+        SubTask(
+            id="t3",
+            description="task 3",
+            acceptance_criteria=["c3"],
+            depends_on=[],
+        ),
+    ])
+
+    history = []
+    lock = threading.Lock()
+
+    def mock_orchestrate_subtask(subtask, *args, **kwargs):
+        with lock:
+            history.append((subtask.id, "start"))
+
+        if subtask.id == "t1":
+            time.sleep(0.1)
+        elif subtask.id == "t3":
+            time.sleep(0.2)
+        elif subtask.id == "t2":
+            time.sleep(0.05)
+
+        with lock:
+            history.append((subtask.id, "end"))
+
+        return {
+            "succeeded": True,
+            "attempt": MagicMock(code="code"),
+            "iterations": 1,
+            "escalated": False,
+            "aborted_reason": None,
+        }
+
+    with patch("builder_agent.orchestrate.clarify", return_value=SPEC), \
+         patch("builder_agent.orchestrate.make_plan", return_value=plan), \
+         patch(
+             "builder_agent.orchestrate.orchestrate_subtask",
+             side_effect=mock_orchestrate_subtask,
+         ), \
+         patch("builder_agent.orchestrate.integrate", return_value="integrated"), \
+         patch("builder_agent.orchestrate.verify") as mock_verify:
+
+         mock_verify_verdict = MagicMock()
+         mock_verify_verdict.passed = True
+         mock_verify.return_value = mock_verify_verdict
+
+         result = orchestrate("test parallel", interactive=False)
+
+         assert result["succeeded"] is True
+
+         t1_end_idx = history.index(("t1", "end"))
+         t3_start_idx = history.index(("t3", "start"))
+         t2_start_idx = history.index(("t2", "start"))
+
+         # t2 depends on t1, so t2 must start after t1 ends
+         assert t2_start_idx > t1_end_idx
+
+         # t3 is independent of t1, so t3 should start before t1 ends
+         assert t3_start_idx < t1_end_idx
+
+
+def test_progress_callback_metadata():
+    from unittest.mock import MagicMock, patch
+
+    from builder_agent.orchestrate import orchestrate
+    from builder_agent.schemas import Plan, SubTask
+
+    plan = Plan(subtasks=[
+        SubTask(
+            id="t1",
+            description="task 1",
+            acceptance_criteria=["c1"],
+            depends_on=[],
+        ),
+    ])
+
+    events = []
+    def progress_cb(event, data):
+        events.append((event, data.copy()))
+
+    def mock_orchestrate_subtask(subtask, *args, **kwargs):
+        kwargs["on_progress"]("generating", {"subtask": subtask.id, "iteration": 1})
+        return {
+            "succeeded": True,
+            "attempt": MagicMock(code="code"),
+            "iterations": 1,
+            "escalated": False,
+            "aborted_reason": None,
+        }
+
+    with patch("builder_agent.orchestrate.clarify", return_value=SPEC), \
+         patch("builder_agent.orchestrate.make_plan", return_value=plan), \
+         patch(
+             "builder_agent.orchestrate.orchestrate_subtask",
+             side_effect=mock_orchestrate_subtask,
+         ), \
+         patch("builder_agent.orchestrate.integrate", return_value="integrated"), \
+         patch("builder_agent.orchestrate.verify") as mock_verify:
+
+         mock_verify_verdict = MagicMock()
+         mock_verify_verdict.passed = True
+         mock_verify.return_value = mock_verify_verdict
+
+         orchestrate("test progress", interactive=False, on_progress=progress_cb)
+
+         start_event = next(e for e in events if e[0] == "subtask_start")
+         done_event = next(e for e in events if e[0] == "subtask_done")
+         generating_event = next(e for e in events if e[0] == "generating")
+
+         assert start_event[1]["subtask"] == "t1"
+         assert start_event[1]["index"] == 0
+         assert start_event[1]["total"] == 1
+
+         assert done_event[1]["subtask"] == "t1"
+         assert done_event[1]["succeeded"] is True
+         assert done_event[1]["index"] == 0
+         assert done_event[1]["total"] == 1
+
+         assert generating_event[1]["subtask"] == "t1"
+         assert generating_event[1]["iteration"] == 1
+
+
+def test_sqlite_db_lock():
+    import threading
+    import time
+    from unittest.mock import MagicMock
+
+    from builder_agent.orchestrate import _store_subtask_memory
+
+    memory = MagicMock()
+    spec = MagicMock()
+    subtask = MagicMock()
+    attempts = [MagicMock()]
+    best = MagicMock()
+
+    call_times = []
+
+    def mock_store(record):
+        call_times.append(time.time())
+        time.sleep(0.05)
+        call_times.append(time.time())
+
+    memory.store = mock_store
+
+    t1 = threading.Thread(
+        target=_store_subtask_memory,
+        args=(memory, spec, subtask, attempts, best),
+    )
+    t2 = threading.Thread(
+        target=_store_subtask_memory,
+        args=(memory, spec, subtask, attempts, best),
+    )
+
+    t1.start()
+    time.sleep(0.01)
+    t2.start()
+
+    t1.join()
+    t2.join()
+
+    # Thread safety check: start of t2 (call_times[2]) >= end of t1 (call_times[1])
+    assert call_times[2] >= call_times[1]
+
+
+def test_budget_exceeded_concurrency():
+    from unittest.mock import MagicMock, patch
+
+    from builder_agent.budget import TokenBudget
+    from builder_agent.orchestrate import orchestrate
+    from builder_agent.schemas import Plan, SubTask
+
+    plan = Plan(subtasks=[
+        SubTask(
+            id="t1",
+            description="task 1",
+            acceptance_criteria=["c1"],
+            depends_on=[],
+        ),
+        SubTask(
+            id="t2",
+            description="task 2",
+            acceptance_criteria=["c2"],
+            depends_on=["t1"],
+        ),
+    ])
+
+    budget = TokenBudget(limit=10)
+
+    def mock_orchestrate_subtask(subtask, *args, **kwargs):
+        budget.record(5, 6)
+        return {
+            "succeeded": True,
+            "attempt": MagicMock(code="code"),
+            "iterations": 1,
+            "escalated": False,
+            "aborted_reason": None,
+        }
+
+    with patch("builder_agent.orchestrate.clarify", return_value=SPEC), \
+         patch("builder_agent.orchestrate.make_plan", return_value=plan), \
+         patch(
+             "builder_agent.orchestrate.orchestrate_subtask",
+             side_effect=mock_orchestrate_subtask,
+         ), \
+         patch("builder_agent.orchestrate.integrate", return_value="integrated"), \
+         patch("builder_agent.orchestrate.verify") as mock_verify:
+
+         mock_verify_verdict = MagicMock()
+         mock_verify_verdict.passed = True
+         mock_verify.return_value = mock_verify_verdict
+
+         res = orchestrate("test budget", interactive=False, budget=budget)
+         assert res["succeeded"] is False

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -13,6 +14,7 @@ for _name in ("httpx", "httpcore", "openai", "anthropic"):
     _lg.propagate = False
 
 _providers: dict[str, Callable] = {}
+_async_providers: dict[str, Callable] = {}
 _embed_providers: dict[str, Callable] = {}
 _budget = None
 
@@ -83,6 +85,10 @@ def extract_json(text: str) -> str:
 
 def register_provider(name: str, fn: Callable) -> None:
     _providers[name] = fn
+
+
+def register_async_provider(name: str, fn: Callable) -> None:
+    _async_providers[name] = fn
 
 
 def register_embed_provider(name: str, fn: Callable) -> None:
@@ -248,3 +254,114 @@ def _embed_voyage(text: str, *, model: ModelConfig) -> list[float]:
     client = voyageai.Client(api_key=api_key)
     result = client.embed([text], model=model.model_id)
     return result.embeddings[0]
+
+
+async def async_ask(
+    prompt: str,
+    *,
+    model: ModelConfig,
+    system: str = "",
+    max_tokens: int = 4096,
+) -> str:
+    fn = _async_providers.get(model.provider)
+    if fn is None:
+        if model.provider in ("anthropic", "openai"):
+            fn = _default_async_provider(model.provider)
+        else:
+            return await asyncio.to_thread(
+                ask, prompt, model=model, system=system, max_tokens=max_tokens
+            )
+    return await fn(prompt, model=model, system=system, max_tokens=max_tokens)
+
+
+def _default_async_provider(name: str) -> Callable:
+    if name == "anthropic":
+        register_async_provider("anthropic", _async_ask_anthropic)
+        return _async_ask_anthropic
+    if name == "openai":
+        register_async_provider("openai", _async_ask_openai)
+        return _async_ask_openai
+    raise ValueError(
+        f"Unknown async provider '{name}'."
+    )
+
+
+async def _async_ask_anthropic(
+    prompt: str,
+    *,
+    model: ModelConfig,
+    system: str = "",
+    max_tokens: int = 4096,
+) -> str:
+    import anthropic
+
+    kwargs: dict = {}
+    env_var = model.api_key_env or "ANTHROPIC_API_KEY"
+    api_key = os.environ.get(env_var)
+    if api_key:
+        kwargs["api_key"] = api_key
+    elif not model.base_url:
+        raise RuntimeError(
+            f"No API key found. Set {env_var} in your environment "
+            f"or create a .env file. See .env.example."
+        )
+    if model.base_url:
+        kwargs["base_url"] = model.base_url
+
+    client = anthropic.AsyncAnthropic(**kwargs)
+    msg_kwargs: dict = {
+        "model": model.model_id,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        msg_kwargs["system"] = system
+    response = await client.messages.create(**msg_kwargs)
+    if hasattr(response, "usage") and response.usage:
+        _record_usage(
+            response.usage.input_tokens,
+            response.usage.output_tokens,
+        )
+    return response.content[0].text or ""
+
+
+async def _async_ask_openai(
+    prompt: str,
+    *,
+    model: ModelConfig,
+    system: str = "",
+    max_tokens: int = 4096,
+) -> str:
+    import openai
+
+    kwargs: dict = {}
+    env_var = model.api_key_env or "OPENAI_API_KEY"
+    api_key = os.environ.get(env_var)
+    if api_key:
+        kwargs["api_key"] = api_key
+    elif model.base_url and "localhost" in model.base_url:
+        kwargs["api_key"] = "ollama"
+    else:
+        raise RuntimeError(
+            f"No API key found. Set {env_var} in your environment "
+            f"or create a .env file. See .env.example."
+        )
+    if model.base_url:
+        kwargs["base_url"] = model.base_url
+
+    client = openai.AsyncOpenAI(**kwargs)
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+    response = await client.chat.completions.create(
+        model=model.model_id,
+        messages=messages,
+        max_tokens=max_tokens,
+    )
+    if hasattr(response, "usage") and response.usage:
+        _record_usage(
+            response.usage.prompt_tokens or 0,
+            response.usage.completion_tokens or 0,
+        )
+    return response.choices[0].message.content or ""
