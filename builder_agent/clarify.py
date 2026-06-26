@@ -22,6 +22,42 @@ _CLARIFY_PROMPT = (
     "Respond with ONLY the JSON object, no markdown fencing."
 )
 
+_AMBIGUITY_SYSTEM = (
+    "You are a requirements analyst. Inspect the user's request for software "
+    "generation. If the request is ambiguous, lacks concrete specifications, "
+    "or requires decisions (e.g., input/output format, edge case handling, "
+    "libraries to use), generate 1 to 3 high-value, specific clarifying questions. "
+    "If the request is already clear and detailed enough to build without "
+    "additional clarification, return an empty JSON list []. "
+    "Return ONLY a valid JSON list of strings, with no explanation or markdown fencing."
+)
+
+_AMBIGUITY_PROMPT = (
+    "User request: {request}\n\n"
+    "Generate clarifying questions if needed. Return ONLY a JSON list of strings."
+)
+
+
+def detect_ambiguity(request: str) -> list[str]:
+    """Analyze the request for ambiguity and return up to 3 clarifying questions.
+
+    If the request is clear or if an error occurs, returns an empty list.
+    """
+    raw = ask(
+        _AMBIGUITY_PROMPT.format(request=request),
+        model=config.PLANNER_MODEL,
+        system=_AMBIGUITY_SYSTEM,
+    )
+    try:
+        data = json.loads(extract_json(raw))
+        if isinstance(data, list):
+            questions = [str(q).strip() for q in data if q]
+            return questions[:3]
+    except Exception:
+        pass
+    return []
+
+
 
 def clarify(request: str, *, interactive: bool = True) -> Spec:
     answers_block = ""

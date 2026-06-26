@@ -217,3 +217,106 @@ def test_module_entrypoint():
             "__main__.py",
         )
     )
+
+
+def test_repl_clarify_toggle(monkeypatch, capsys):
+    inputs = ["/clarify", "/clarify off", "/clarify on", "/clarify toggle", "/quit"]
+    input_iter = iter(inputs)
+    monkeypatch.setattr("builtins.input", lambda *a: next(input_iter))
+
+    from builder_agent.cli import _repl
+    code = _repl()
+    assert code == 0
+
+    out = capsys.readouterr().out
+    assert "Interactive clarification is currently on" in out
+    assert "Interactive clarification is now off" in out
+    assert "Interactive clarification is now on" in out
+    assert "Interactive clarification is currently on" in out
+
+
+@patch("builder_agent.cli.orchestrate")
+@patch("builder_agent.cli.detect_ambiguity")
+def test_repl_interactive_clarification_flow(mock_detect, mock_orch, monkeypatch):
+    mock_detect.return_value = ["Q1?", "Q2?"]
+    mock_orch.return_value = _make_success_result()
+    inputs = ["build a calculator", "python", "", "/quit"]
+    input_iter = iter(inputs)
+    monkeypatch.setattr("builtins.input", lambda *a: next(input_iter))
+
+    from builder_agent.cli import _repl
+    code = _repl()
+    assert code == 0
+
+    mock_orch.assert_called_once()
+    called_request = mock_orch.call_args[0][0]
+    assert "build a calculator" in called_request
+    assert "Clarifications:" in called_request
+    assert "- Q: Q1?\n  A: python" in called_request
+    assert "- Q: Q2?\n  A: Not specified" in called_request
+
+
+@patch("builder_agent.cli.detect_ambiguity")
+def test_repl_interactive_clarification_ctrl_c(mock_detect, monkeypatch, capsys):
+    mock_detect.return_value = ["Q1?"]
+
+    class MockIter:
+        def __init__(self):
+            self.step = 0
+        def __call__(self, *args, **kwargs):
+            self.step += 1
+            if self.step == 1:
+                return "build a calculator"
+            elif self.step == 2:
+                raise KeyboardInterrupt()
+            else:
+                return "/quit"
+
+    monkeypatch.setattr("builtins.input", MockIter())
+
+    from builder_agent.cli import _repl
+    code = _repl()
+    assert code == 0
+
+    out = capsys.readouterr().out
+    assert "Build cancelled" in out
+
+
+@patch("builder_agent.cli.orchestrate")
+@patch("builder_agent.cli.detect_ambiguity")
+def test_cli_build_interactive_clarify_flag(mock_detect, mock_orch, monkeypatch):
+    mock_detect.return_value = ["Q1?"]
+    mock_orch.return_value = _make_success_result()
+    inputs = ["answers"]
+    input_iter = iter(inputs)
+    monkeypatch.setattr("builtins.input", lambda *a: next(input_iter))
+
+    args = [
+        "build", "build a calculator",
+        "--interactive-clarify", "--non-interactive",
+    ]
+    code = main(args)
+    assert code == 0
+    mock_orch.assert_called_once()
+    assert "answers" in mock_orch.call_args[0][0]
+
+
+@patch("builder_agent.cli.detect_ambiguity")
+def test_cli_build_interactive_clarify_flag_ctrl_c(mock_detect, monkeypatch):
+    mock_detect.return_value = ["Q1?"]
+    monkeypatch.setattr("builtins.input", lambda *a: exec("raise KeyboardInterrupt()"))
+
+    args = [
+        "build", "build a calculator",
+        "--interactive-clarify", "--non-interactive",
+    ]
+    code = main(args)
+    assert code == 2
+
+
+def test_cli_build_interactive_clarify_with_json(capsys):
+    code = main(["build", "req", "--interactive-clarify", "--json"])
+    assert code == 3
+    err = capsys.readouterr().err
+    assert "cannot be used with --json" in err
+
