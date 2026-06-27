@@ -181,10 +181,19 @@ def orchestrate_subtask(
             "subtask": subtask.id, "iteration": i + 1,
         })
         logger.info("[%s] iter %d — generating code", subtask.id, i + 1)
+
+        def chunk_callback(chunk: str) -> None:
+            on_progress("chunk", {
+                "subtask": subtask.id,
+                "iteration": i + 1,
+                "chunk": chunk,
+            })
+
         code = generate(
             subtask, spec, feedback=feedback,
             memory_hints=memory_hints,
             worker_model=current_worker,
+            on_chunk=chunk_callback,
         )
 
         on_progress("critiquing", {

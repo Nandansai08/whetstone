@@ -158,6 +158,7 @@ class ProgressRenderer:
     def __init__(self, spinner: Spinner):
         self._spinner = spinner
         self._stage_start = 0.0
+        self._start_of_line = True
 
     def _elapsed_tag(self) -> str:
         dt = time.time() - self._stage_start
@@ -203,11 +204,28 @@ class ProgressRenderer:
 
         elif event == "generating":
             it = data["iteration"]
-            sid = data["subtask"]
-            s.start("Generating", detail=f"iter {it}")
+            s.stop()
+            print(f"  {bold('Generating')} {dim(f'iter {it}')}:")
+            self._start_of_line = True
+
+        elif event == "chunk":
+            chunk = data["chunk"]
+            parts = chunk.split("\n")
+            for i, part in enumerate(parts):
+                if i > 0:
+                    sys.stdout.write("\n")
+                    sys.stdout.flush()
+                    self._start_of_line = True
+                if part:
+                    if self._start_of_line:
+                        sys.stdout.write("    ")
+                        self._start_of_line = False
+                    sys.stdout.write(part)
+            sys.stdout.flush()
 
         elif event == "critiquing":
-            s.update("Self-critiquing")
+            print()
+            s.start("Self-critiquing")
 
         elif event == "verifying":
             s.update("Verifying")

@@ -4,10 +4,12 @@ from unittest.mock import MagicMock, patch
 from builder_agent.config import ModelConfig
 from builder_agent.llm import (
     ask,
+    ask_stream,
     embed,
     extract_json,
     register_embed_provider,
     register_provider,
+    register_stream_provider,
     strip_fences,
 )
 
@@ -280,3 +282,50 @@ def test_extract_json_string_with_braces():
     import json
     data = json.loads(result)
     assert data["msg"] == "use {x} and }"
+
+
+@patch("builder_agent.llm._ask_stream_openai")
+def test_ask_stream_dispatches_to_openai(mock_fn):
+    mock_fn.return_value = (chunk for chunk in ["hi", " there"])
+    result = list(ask_stream("say hi", model=OPENAI_MODEL))
+    assert result == ["hi", " there"]
+    mock_fn.assert_called_once()
+
+
+@patch("builder_agent.llm._ask_stream_anthropic")
+def test_ask_stream_dispatches_to_anthropic(mock_fn):
+    mock_fn.return_value = (chunk for chunk in ["hello"])
+    result = list(ask_stream("say hi", model=ANTHROPIC_MODEL))
+    assert result == ["hello"]
+    mock_fn.assert_called_once()
+
+
+def test_register_custom_stream_provider():
+    calls = []
+
+    def my_stream_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append((prompt, model))
+        yield "custom "
+        yield "stream"
+
+    register_stream_provider("my_stream_llm", my_stream_provider)
+    m = ModelConfig("my_stream_llm", "my-model-v1")
+    result = list(ask_stream("test", model=m))
+    assert result == ["custom ", "stream"]
+    assert len(calls) == 1
+    assert calls[0][1].model_id == "my-model-v1"
+
+
+def test_ask_stream_fallback_to_ask():
+    calls = []
+
+    def my_non_stream_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append((prompt, model))
+        return "non-stream response"
+
+    register_provider("my_non_stream_llm", my_non_stream_provider)
+    m = ModelConfig("my_non_stream_llm", "my-model-v1")
+    result = list(ask_stream("test", model=m))
+    assert result == ["non-stream response"]
+    assert len(calls) == 1
+    assert calls[0][1].model_id == "my-model-v1"

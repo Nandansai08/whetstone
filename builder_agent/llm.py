@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Callable
+from typing import Callable, Generator
 
 from builder_agent.config import ModelConfig
 
@@ -13,6 +13,7 @@ for _name in ("httpx", "httpcore", "openai", "anthropic"):
     _lg.propagate = False
 
 _providers: dict[str, Callable] = {}
+_stream_providers: dict[str, Callable] = {}
 _embed_providers: dict[str, Callable] = {}
 _budget = None
 
@@ -85,6 +86,10 @@ def register_provider(name: str, fn: Callable) -> None:
     _providers[name] = fn
 
 
+def register_stream_provider(name: str, fn: Callable) -> None:
+    _stream_providers[name] = fn
+
+
 def register_embed_provider(name: str, fn: Callable) -> None:
     _embed_providers[name] = fn
 
@@ -111,6 +116,24 @@ def ask(
     if fn is None:
         fn = _default_provider(model.provider)
     return fn(prompt, model=model, system=system, max_tokens=max_tokens)
+
+
+def ask_stream(
+    prompt: str,
+    *,
+    model: ModelConfig,
+    system: str = "",
+    max_tokens: int = 4096,
+) -> Generator[str, None, None]:
+    fn = _stream_providers.get(model.provider)
+    if fn is None:
+        if model.provider in ("anthropic", "openai"):
+            fn = _default_stream_provider(model.provider)
+        else:
+            # Fallback to ask() and yield the entire response as a single chunk
+            yield ask(prompt, model=model, system=system, max_tokens=max_tokens)
+            return
+    yield from fn(prompt, model=model, system=system, max_tokens=max_tokens)
 
 
 def _default_provider(name: str) -> Callable:
@@ -205,6 +228,118 @@ def _ask_openai(
             response.usage.completion_tokens or 0,
         )
     return response.choices[0].message.content or ""
+
+
+def _default_stream_provider(name: str) -> Callable:
+    if name == "anthropic":
+        register_stream_provider("anthropic", _ask_stream_anthropic)
+        return _ask_stream_anthropic
+    if name == "openai":
+        register_stream_provider("openai", _ask_stream_openai)
+        return _ask_stream_openai
+    raise ValueError(
+        f"Unknown stream provider '{name}'."
+    )
+
+
+def _ask_stream_anthropic(
+    prompt: str,
+    *,
+    model: ModelConfig,
+    system: str = "",
+    max_tokens: int = 4096,
+) -> Generator[str, None, None]:
+    import anthropic
+
+    kwargs: dict = {}
+    env_var = model.api_key_env or "ANTHROPIC_API_KEY"
+    api_key = os.environ.get(env_var)
+    if api_key:
+        kwargs["api_key"] = api_key
+    elif not model.base_url:
+        raise RuntimeError(
+            f"No API key found. Set {env_var} in your environment "
+            f"or create a .env file. See .env.example."
+        )
+    if model.base_url:
+        kwargs["base_url"] = model.base_url
+
+    client = anthropic.Anthropic(**kwargs)
+    msg_kwargs: dict = {
+        "model": model.model_id,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        msg_kwargs["system"] = system
+
+    with client.messages.stream(**msg_kwargs) as stream:
+        for text in stream.text_stream:
+            yield text
+        message = stream.get_final_message()
+        if message and hasattr(message, "usage") and message.usage:
+            _record_usage(
+                message.usage.input_tokens,
+                message.usage.output_tokens,
+            )
+
+
+def _ask_stream_openai(
+    prompt: str,
+    *,
+    model: ModelConfig,
+    system: str = "",
+    max_tokens: int = 4096,
+) -> Generator[str, None, None]:
+    import openai
+
+    kwargs: dict = {}
+    env_var = model.api_key_env or "OPENAI_API_KEY"
+    api_key = os.environ.get(env_var)
+    if api_key:
+        kwargs["api_key"] = api_key
+    elif model.base_url and "localhost" in model.base_url:
+        kwargs["api_key"] = "ollama"
+    else:
+        raise RuntimeError(
+            f"No API key found. Set {env_var} in your environment "
+            f"or create a .env file. See .env.example."
+        )
+    if model.base_url:
+        kwargs["base_url"] = model.base_url
+
+    client = openai.OpenAI(**kwargs)
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    try:
+        response = client.chat.completions.create(
+            model=model.model_id,
+            messages=messages,
+            max_tokens=max_tokens,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
+    except TypeError:
+        response = client.chat.completions.create(
+            model=model.model_id,
+            messages=messages,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+
+    for chunk in response:
+        if hasattr(chunk, "usage") and chunk.usage:
+            _record_usage(
+                chunk.usage.prompt_tokens or 0,
+                chunk.usage.completion_tokens or 0,
+            )
+        if chunk.choices:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
 
 
 def _default_embed_provider(name: str) -> Callable:

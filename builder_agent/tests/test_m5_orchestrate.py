@@ -24,6 +24,12 @@ JUDGE = ModelConfig("openai", "gpt-4o")
 ESCALATION = ModelConfig("openai", "gpt-4o-escalation")
 
 
+def _ask_stream_mock_wrapper(mock_ask):
+    def stream_side_effect(*args, **kwargs):
+        yield mock_ask(*args, **kwargs)
+    return stream_side_effect
+
+
 # --- _detect_plateau unit tests ---
 
 
@@ -53,6 +59,7 @@ def test_plateau_slow_improvement():
 # --- Plateau escalation tests ---
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.config.ESCALATION_MODEL", ESCALATION)
@@ -62,8 +69,9 @@ def test_plateau_slow_improvement():
 @patch("builder_agent.generate.ask")
 @patch("builder_agent.verify.ask")
 def test_plateau_triggers_escalation(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     gen_models = []
 
     def gen_side(prompt, *, model, system="", max_tokens=4096):
@@ -92,6 +100,7 @@ def test_plateau_triggers_escalation(
     assert gen_models[-2] == ESCALATION
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.config.ESCALATION_MODEL", ESCALATION)
@@ -101,8 +110,9 @@ def test_plateau_triggers_escalation(
 @patch("builder_agent.generate.ask", return_value="code")
 @patch("builder_agent.verify.ask")
 def test_plateau_after_escalation_stops(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     scores = iter([
         "assert True", json.dumps({"score": 5, "issues": ["x"]}),
         "assert True", json.dumps({"score": 5, "issues": ["x"]}),
@@ -126,6 +136,7 @@ def test_plateau_after_escalation_stops(
 # --- Budget exhaustion tests ---
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.config.MAX_ITERATIONS", 5)
@@ -133,8 +144,9 @@ def test_plateau_after_escalation_stops(
 @patch("builder_agent.generate.ask", return_value="code")
 @patch("builder_agent.verify.ask")
 def test_budget_exhaustion_mid_subtask(
-    mock_verify_ask, mock_gen_ask, mock_run,
+    mock_verify_ask, mock_gen_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     budget = TokenBudget(limit=100)
     budget.record(50, 60)  # already over
 
@@ -167,6 +179,7 @@ def _clarify_resp(prompt, *, model, system="", max_tokens=4096):
     })
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
@@ -176,8 +189,9 @@ def _clarify_resp(prompt, *, model, system="", max_tokens=4096):
 @patch("builder_agent.verify.ask")
 def test_budget_exhaustion_between_subtasks(
     mock_verify_ask, mock_gen_ask, mock_plan_ask,
-    mock_clarify_ask, mock_run,
+    mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     budget = TokenBudget(limit=100)
     budget.record(50, 60)  # already over
 
@@ -193,6 +207,7 @@ def test_budget_exhaustion_between_subtasks(
     assert result["usage"]["total_tokens"] >= 100
 
 
+@patch("builder_agent.generate.ask_stream")
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))
@@ -202,8 +217,9 @@ def test_budget_exhaustion_between_subtasks(
 @patch("builder_agent.verify.ask")
 def test_orchestrate_returns_usage(
     mock_verify_ask, mock_gen_ask, mock_plan_ask,
-    mock_clarify_ask, mock_run,
+    mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
     verify_responses = [
         "assert True",
         json.dumps({"score": 9, "issues": []}),
