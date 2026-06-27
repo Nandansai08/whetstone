@@ -654,6 +654,75 @@ def _cmd_memory_clear(args) -> int:
     return EXIT_SUCCESS
 
 
+def _cmd_init(args) -> int:
+    import pathlib
+    target = pathlib.Path.cwd() / ".whetstone.toml"
+    if target.exists():
+        print("  File .whetstone.toml already exists. Generation skipped.")
+        return EXIT_SUCCESS
+
+    default_config_toml = """# Whetstone Configuration File
+# Place this file as .whetstone.toml in your project root
+# or as ~/.config/whetstone/config.toml for global user settings.
+
+max_iterations = 4
+score_threshold = 8
+plateau_patience = 2
+exec_timeout = 10
+token_budget = 200000
+embedder = "tfidf"
+max_subtasks = 5
+max_retries = 3
+retry_delay = 1.0
+
+[models.worker]
+provider = "openai"
+model_id = "meta-llama/llama-4-scout"
+api_key_env = "OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+[models.judge]
+provider = "openai"
+model_id = "google/gemini-2.5-flash-preview"
+api_key_env = "OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+[models.planner]
+provider = "openai"
+model_id = "meta-llama/llama-4-scout"
+api_key_env = "OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+[models.escalation]
+provider = "openai"
+model_id = "google/gemini-2.5-flash-preview"
+api_key_env = "OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+[memory]
+db_path = "./builder_memory.db"
+top_k = 3
+min_similarity = 0.4
+
+[sandbox]
+backend = "subprocess"
+engine = "docker"
+image = "python:3.11-slim"
+memory_limit = "256m"
+cpu_limit = 1.0
+network_access = false
+"""
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(default_config_toml)
+        print(f"  Initialized default configuration in {target}")
+        return EXIT_SUCCESS
+    except Exception as e:
+        print(f"  Error: Failed to write configuration file: {e}")
+        return EXIT_FAILURE
+
+
 # ── Entrypoint ───────────────────────────────────────────────────────
 
 
@@ -671,6 +740,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("chat", help="Interactive REPL (default)")
+    sub.add_parser("init", help="Generate a default .whetstone.toml configuration file")
 
     build_p = sub.add_parser("build", help="One-shot build")
     build_p.add_argument("request", help="What to build")
@@ -719,6 +789,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command is None or args.command == "chat":
         return _repl()
+    if args.command == "init":
+        return _cmd_init(args)
     if args.command == "build":
         return _cmd_build(args)
     if args.command == "memory":
