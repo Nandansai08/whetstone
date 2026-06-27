@@ -37,3 +37,35 @@ def test_clarify_interactive_omits_defaults_block(mock_ask):
     clarify("build X", interactive=True)
     prompt_arg = mock_ask.call_args[0][0]
     assert "sensible defaults" not in prompt_arg
+
+
+def test_detect_ambiguity_no_questions():
+    with patch("builder_agent.clarify.ask", return_value="[]") as mock_ask:
+        from builder_agent.clarify import detect_ambiguity
+        res = detect_ambiguity("simple request")
+        assert res == []
+        mock_ask.assert_called_once()
+
+
+def test_detect_ambiguity_with_questions():
+    with patch("builder_agent.clarify.ask", return_value='["Q1?", "Q2?"]') as mock_ask:
+        from builder_agent.clarify import detect_ambiguity
+        res = detect_ambiguity("ambiguous request")
+        assert res == ["Q1?", "Q2?"]
+        mock_ask.assert_called_once()
+
+
+def test_detect_ambiguity_caps_at_3():
+    val = '["Q1?", "Q2?", "Q3?", "Q4?"]'
+    with patch("builder_agent.clarify.ask", return_value=val):
+        from builder_agent.clarify import detect_ambiguity
+        res = detect_ambiguity("vague request")
+        assert res == ["Q1?", "Q2?", "Q3?"]
+
+
+def test_detect_ambiguity_invalid_json():
+    with patch("builder_agent.clarify.ask", return_value='not a json list'):
+        from builder_agent.clarify import detect_ambiguity
+        res = detect_ambiguity("bad json response")
+        assert res == []
+

@@ -38,6 +38,7 @@ MEMORY_TOP_K = 3
 MEMORY_MIN_SIMILARITY = 0.4
 EMBEDDER = "tfidf"
 MAX_SUBTASKS = 5
+INTERACTIVE_CLARIFY = True
 
 # Sandbox Configuration
 SANDBOX_BACKEND = "subprocess"      # "subprocess" | "container"
