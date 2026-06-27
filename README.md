@@ -176,56 +176,63 @@ whetstone
 
 ## Configuration
 
-Edit `builder_agent/config.py` to switch providers:
+Instead of editing `builder_agent/config.py` directly, you can configure Whetstone using TOML configuration files.
 
-<details>
-<summary><strong>OpenRouter (default — free models available)</strong></summary>
+### Configuration Search Order
+Whetstone loads configuration settings in the following order of precedence (highest to lowest):
+1. **CLI arguments** (e.g., `--max-iterations`, `--token-budget`).
+2. **Project-local config**: `.whetstone.toml` in the current project directory.
+3. **Global user config**: `~/.config/whetstone/config.toml` in your home directory.
+4. **Defaults**: Core defaults fallback defined in `builder_agent/config.py`.
 
-```python
-_OPENROUTER = "https://openrouter.ai/api/v1"
-_OR_KEY = "OPENROUTER_API_KEY"
-
-WORKER_MODEL = ModelConfig("openai", "meta-llama/llama-4-scout",
-                           api_key_env=_OR_KEY, base_url=_OPENROUTER)
-JUDGE_MODEL  = ModelConfig("openai", "google/gemini-2.5-flash-preview",
-                           api_key_env=_OR_KEY, base_url=_OPENROUTER)
-```
-</details>
-
-<details>
-<summary><strong>Ollama (local, no API key needed)</strong></summary>
-
-```python
-_OLLAMA = "http://localhost:11434/v1"
-
-WORKER_MODEL = ModelConfig("openai", "gemma3:12b", base_url=_OLLAMA)
-JUDGE_MODEL  = ModelConfig("openai", "qwen2.5:14b", base_url=_OLLAMA)
-```
-
+### Generating a Default Config File
+To initialize a default configuration file in your current project root, run:
 ```bash
-# Install and start models
-ollama pull gemma3:12b
-ollama pull qwen2.5:14b
+whetstone init
 ```
-</details>
+This generates a `.whetstone.toml` file with standard configurations and documented providers. If the file already exists, the command will exit safely without modifying it.
 
-<details>
-<summary><strong>OpenAI direct</strong></summary>
+### Example Configuration (`.whetstone.toml`)
+```toml
+# General settings
+max_iterations = 4
+score_threshold = 8
+plateau_patience = 2
+exec_timeout = 10
+token_budget = 200000
+embedder = "tfidf"
+max_subtasks = 5
+max_retries = 3
+retry_delay = 1.0
 
-```python
-WORKER_MODEL = ModelConfig("openai", "gpt-4o-mini", api_key_env="OPENAI_API_KEY")
-JUDGE_MODEL  = ModelConfig("openai", "gpt-4o", api_key_env="OPENAI_API_KEY")
+# Models config
+[models.worker]
+provider = "openai"
+model_id = "meta-llama/llama-4-scout"
+api_key_env = "OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+[models.judge]
+provider = "openai"
+model_id = "google/gemini-2.5-flash-preview"
+api_key_env = "OPENROUTER_API_KEY"
+base_url = "https://openrouter.ai/api/v1"
+
+# Memory config
+[memory]
+db_path = "./builder_memory.db"
+top_k = 3
+min_similarity = 0.4
+
+# Sandbox settings
+[sandbox]
+backend = "subprocess"
+engine = "docker"
+image = "python:3.11-slim"
+memory_limit = "256m"
+cpu_limit = 1.0
+network_access = false
 ```
-</details>
-
-<details>
-<summary><strong>Anthropic direct</strong></summary>
-
-```python
-WORKER_MODEL = ModelConfig("anthropic", "claude-sonnet-4-6", api_key_env="ANTHROPIC_API_KEY")
-JUDGE_MODEL  = ModelConfig("anthropic", "claude-opus-4-6", api_key_env="ANTHROPIC_API_KEY")
-```
-</details>
 
 ## CLI Reference
 
