@@ -384,5 +384,295 @@ def test_ask_does_not_retry_config_errors(mock_sleep):
     m = ModelConfig("bad_key_llm", "v1")
     with pytest.raises(RuntimeError):
         ask("test", model=m)
+
+
+@patch("time.sleep")
+def test_retry_success_first_attempt(mock_sleep):
+    calls = []
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        return "success"
+
+    register_provider("test_retry_success", mock_provider)
+    m = ModelConfig("test_retry_success", "model-v1")
+
+    res = ask("hello", model=m)
+    assert res == "success"
+    assert len(calls) == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("time.sleep")
+def test_retry_once_then_succeeds(mock_sleep):
+    calls = []
+    import httpx
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        if len(calls) == 1:
+            raise httpx.ConnectError("connection failed")
+        return "success"
+
+    register_provider("test_retry_once", mock_provider)
+    m = ModelConfig("test_retry_once", "model-v1")
+
+    progress_events = []
+    def progress_callback(event, data):
+        progress_events.append((event, data))
+
+    from builder_agent.llm import set_progress_callback
+    set_progress_callback(progress_callback)
+    try:
+        res = ask("hello", model=m)
+        assert res == "success"
+        assert len(calls) == 2
+        mock_sleep.assert_called_once_with(1.0)
+        assert len(progress_events) == 1
+        assert progress_events[0][0] == "retry"
+        assert progress_events[0][1]["attempt"] == 1
+        assert progress_events[0][1]["delay"] == 1.0
+        assert "connection failed" in progress_events[0][1]["error"]
+    finally:
+        set_progress_callback(None)
+
+
+@patch("time.sleep")
+def test_retry_multiple_times_then_succeeds(mock_sleep):
+    calls = []
+    import httpx
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        if len(calls) <= 2:
+            raise httpx.ConnectError("connection failed")
+        return "success"
+
+    register_provider("test_retry_multiple", mock_provider)
+    m = ModelConfig("test_retry_multiple", "model-v1")
+
+    res = ask("hello", model=m)
+    assert res == "success"
+    assert len(calls) == 3
+    assert mock_sleep.call_count == 2
+    mock_sleep.assert_any_call(1.0)
+    mock_sleep.assert_any_call(2.0)
+
+
+@patch("time.sleep")
+def test_retry_exhausted(mock_sleep):
+    calls = []
+    import httpx
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        raise httpx.ConnectError("connection failed")
+
+    register_provider("test_retry_exhausted", mock_provider)
+    m = ModelConfig("test_retry_exhausted", "model-v1")
+
+    try:
+        ask("hello", model=m)
+        assert False, "Should have raised exception"
+    except httpx.ConnectError as e:
+        assert "connection failed" in str(e)
+
+    assert len(calls) == 4  # Initial try + 3 retries
+    assert mock_sleep.call_count == 3
+    mock_sleep.assert_any_call(1.0)
+    mock_sleep.assert_any_call(2.0)
+    mock_sleep.assert_any_call(4.0)
+
+
+@patch("time.sleep")
+def test_retry_429_openai(mock_sleep):
+    calls = []
+    import httpx
+    import openai
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        if len(calls) == 1:
+            req = httpx.Request("POST", "https://api.openai.com")
+            resp = httpx.Response(status_code=429, request=req)
+            raise openai.APIStatusError("Rate Limit", response=resp, body=None)
+        return "success"
+
+    register_provider("test_retry_429_openai", mock_provider)
+    m = ModelConfig("test_retry_429_openai", "model-v1")
+
+    res = ask("hello", model=m)
+    assert res == "success"
+    assert len(calls) == 2
+    mock_sleep.assert_called_once_with(1.0)
+
+
+@patch("time.sleep")
+def test_retry_500_anthropic(mock_sleep):
+    calls = []
+    import anthropic
+    import httpx
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        if len(calls) == 1:
+            req = httpx.Request("POST", "https://api.anthropic.com")
+            resp = httpx.Response(status_code=500, request=req)
+            raise anthropic.APIStatusError(
+                "Internal Server Error", response=resp, body=None
+            )
+        return "success"
+
+    register_provider("test_retry_500_anthropic", mock_provider)
+    m = ModelConfig("test_retry_500_anthropic", "model-v1")
+
+    res = ask("hello", model=m)
+    assert res == "success"
+    assert len(calls) == 2
+    mock_sleep.assert_called_once_with(1.0)
+
+
+@patch("time.sleep")
+def test_retry_503_generic(mock_sleep):
+    calls = []
+    import httpx
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        if len(calls) == 1:
+            req = httpx.Request("POST", "https://api.generic.com")
+            resp = httpx.Response(status_code=503, request=req)
+            raise httpx.HTTPStatusError(
+                "Service Unavailable", request=resp.request, response=resp
+            )
+        return "success"
+
+    register_provider("test_retry_503_generic", mock_provider)
+    m = ModelConfig("test_retry_503_generic", "model-v1")
+
+    res = ask("hello", model=m)
+    assert res == "success"
+    assert len(calls) == 2
+    mock_sleep.assert_called_once_with(1.0)
+
+
+@patch("time.sleep")
+def test_no_retry_on_bad_request_or_auth(mock_sleep):
+    calls = []
+    import httpx
+    import openai
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        req = httpx.Request("POST", "https://api.openai.com")
+        resp = httpx.Response(status_code=401, request=req)
+        raise openai.AuthenticationError(
+            "Invalid API Key", response=resp, body=None
+        )
+
+    register_provider("test_no_retry_401", mock_provider)
+    m = ModelConfig("test_no_retry_401", "model-v1")
+
+    try:
+        ask("hello", model=m)
+        assert False, "Should have raised"
+    except openai.AuthenticationError:
+        pass
+
+    assert len(calls) == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("time.sleep")
+def test_no_retry_on_validation_error(mock_sleep):
+    calls = []
+    import httpx
+    import openai
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        req = httpx.Request("POST", "https://api.openai.com")
+        resp = httpx.Response(status_code=400, request=req)
+        raise openai.BadRequestError(
+            "Validation failed", response=resp, body=None
+        )
+
+    register_provider("test_no_retry_400", mock_provider)
+    m = ModelConfig("test_no_retry_400", "model-v1")
+
+    try:
+        ask("hello", model=m)
+        assert False, "Should have raised"
+    except openai.BadRequestError:
+        pass
+
+    assert len(calls) == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("time.sleep")
+def test_no_retry_on_keyboard_interrupt(mock_sleep):
+    calls = []
+
+    def mock_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        raise KeyboardInterrupt()
+
+    register_provider("test_keyboard_interrupt", mock_provider)
+    m = ModelConfig("test_keyboard_interrupt", "model-v1")
+
+    try:
+        ask("hello", model=m)
+        assert False, "Should have raised"
+    except KeyboardInterrupt:
+        pass
+
+    assert len(calls) == 1
+    mock_sleep.assert_not_called()
+
+
+@patch("time.sleep")
+def test_ask_stream_retry_before_start(mock_sleep):
+    calls = []
+    import httpx
+
+    def mock_stream_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        if len(calls) == 1:
+            raise httpx.ConnectError("connection failed")
+        yield "chunk1"
+        yield "chunk2"
+
+    register_stream_provider("test_stream_retry", mock_stream_provider)
+    m = ModelConfig("test_stream_retry", "model-v1")
+
+    res = list(ask_stream("hello", model=m))
+    assert res == ["chunk1", "chunk2"]
+    assert len(calls) == 2
+    mock_sleep.assert_called_once_with(1.0)
+
+
+@patch("time.sleep")
+def test_ask_stream_no_retry_mid_stream(mock_sleep):
+    calls = []
+    import httpx
+
+    def mock_stream_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(prompt)
+        yield "chunk1"
+        raise httpx.ConnectError("midstream failed")
+
+    register_stream_provider("test_stream_mid", mock_stream_provider)
+    m = ModelConfig("test_stream_mid", "model-v1")
+
+    res = []
+    try:
+        for chunk in ask_stream("hello", model=m):
+            res.append(chunk)
+        assert False, "Should have failed mid-stream"
+    except httpx.ConnectError as e:
+        assert "midstream failed" in str(e)
+
+    assert res == ["chunk1"]
     assert len(calls) == 1
     mock_sleep.assert_not_called()

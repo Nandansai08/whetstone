@@ -453,112 +453,117 @@ def orchestrate(
     on_progress: ProgressCallback = _noop_progress,
     resume: bool = False,
 ) -> dict:
-    bid = checkpoint.build_id(request)
-    ckpt = checkpoint.load(bid) if resume else None
+    from builder_agent.llm import set_progress_callback
+    set_progress_callback(on_progress)
+    try:
+        bid = checkpoint.build_id(request)
+        ckpt = checkpoint.load(bid) if resume else None
 
-    if ckpt is not None:
-        spec = ckpt["spec"]
-        the_plan = ckpt["plan"]
-        outputs0 = ckpt["outputs"]
-        completed_ids0 = ckpt["completed_ids"]
-        on_progress("resumed", {
-            "build_id": bid,
-            "completed": len(completed_ids0),
-            "total": len(the_plan.subtasks),
-        })
-        logger.info(
-            "Resumed build %s — %d/%d subtasks already done",
-            bid, len(completed_ids0), len(the_plan.subtasks),
+        if ckpt is not None:
+            spec = ckpt["spec"]
+            the_plan = ckpt["plan"]
+            outputs0 = ckpt["outputs"]
+            completed_ids0 = ckpt["completed_ids"]
+            on_progress("resumed", {
+                "build_id": bid,
+                "completed": len(completed_ids0),
+                "total": len(the_plan.subtasks),
+            })
+            logger.info(
+                "Resumed build %s — %d/%d subtasks already done",
+                bid, len(completed_ids0), len(the_plan.subtasks),
+            )
+        else:
+            on_progress("clarifying", {})
+            logger.info("Clarifying request...")
+            spec = clarify(request, interactive=interactive)
+            on_progress("clarified", {"description": spec.description})
+            logger.info("Spec: %s", spec.description)
+
+            on_progress("planning", {})
+            logger.info("Planning...")
+            the_plan = make_plan(spec, memory=memory)
+            on_progress("planned", {
+                "count": len(the_plan.subtasks),
+                "ids": [s.id for s in the_plan.subtasks],
+                "subtasks": [
+                    {"id": s.id, "description": s.description}
+                    for s in the_plan.subtasks
+                ],
+            })
+            logger.info(
+                "Plan: %d subtasks — %s",
+                len(the_plan.subtasks),
+                ", ".join(s.id for s in the_plan.subtasks),
+            )
+            outputs0 = {}
+            completed_ids0 = set()
+            checkpoint.save(bid, spec, the_plan, outputs0, completed_ids0)
+
+        res = _run_async(
+            _async_orchestrate(
+                spec,
+                the_plan,
+                memory=memory,
+                budget=budget,
+                on_progress=on_progress,
+                build_id=bid,
+                outputs=outputs0,
+                completed_ids=completed_ids0,
+            )
         )
-    else:
-        on_progress("clarifying", {})
-        logger.info("Clarifying request...")
-        spec = clarify(request, interactive=interactive)
-        on_progress("clarified", {"description": spec.description})
-        logger.info("Spec: %s", spec.description)
 
-        on_progress("planning", {})
-        logger.info("Planning...")
-        the_plan = make_plan(spec, memory=memory)
-        on_progress("planned", {
-            "count": len(the_plan.subtasks),
-            "ids": [s.id for s in the_plan.subtasks],
-            "subtasks": [
-                {"id": s.id, "description": s.description}
-                for s in the_plan.subtasks
-            ],
-        })
-        logger.info(
-            "Plan: %d subtasks — %s",
-            len(the_plan.subtasks),
-            ", ".join(s.id for s in the_plan.subtasks),
+        subtask_results = res["subtask_results"]
+
+        if not res["succeeded"]:
+            if memory is not None:
+                plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
+                _store_plan_memory(memory, spec, plan_desc, False)
+            return {
+                "succeeded": False,
+                "halted_at": res["first_failure_id"],
+                "plan": the_plan,
+                "spec": spec,
+                "subtask_results": subtask_results,
+                "artifact": None,
+                "final_verdict": None,
+                "aborted_reason": res["first_failure_reason"],
+                "usage": budget.usage() if budget else None,
+                "build_id": bid,
+            }
+
+        on_progress("integrating", {})
+        logger.info("Integrating outputs...")
+        artifact = integrate(spec, res["outputs"], the_plan)
+
+        on_progress("final_verify", {})
+        logger.info("Running final verification...")
+
+        final_subtask = SubTask(
+            id="_final_verify",
+            description="Final integration verification",
+            acceptance_criteria=spec.acceptance_criteria,
         )
-        outputs0 = {}
-        completed_ids0 = set()
-        checkpoint.save(bid, spec, the_plan, outputs0, completed_ids0)
+        final_verdict = verify(final_subtask, artifact, output_type=spec.output_type)
 
-    res = _run_async(
-        _async_orchestrate(
-            spec,
-            the_plan,
-            memory=memory,
-            budget=budget,
-            on_progress=on_progress,
-            build_id=bid,
-            outputs=outputs0,
-            completed_ids=completed_ids0,
-        )
-    )
-
-    subtask_results = res["subtask_results"]
-
-    if not res["succeeded"]:
         if memory is not None:
             plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
-            _store_plan_memory(memory, spec, plan_desc, False)
+            _store_plan_memory(memory, spec, plan_desc, final_verdict.passed)
+
+        if final_verdict.passed:
+            checkpoint.clear(bid)
+
         return {
-            "succeeded": False,
-            "halted_at": res["first_failure_id"],
+            "succeeded": final_verdict.passed,
+            "halted_at": None,
             "plan": the_plan,
             "spec": spec,
             "subtask_results": subtask_results,
-            "artifact": None,
-            "final_verdict": None,
-            "aborted_reason": res["first_failure_reason"],
+            "artifact": artifact,
+            "final_verdict": final_verdict,
+            "aborted_reason": None,
             "usage": budget.usage() if budget else None,
             "build_id": bid,
         }
-
-    on_progress("integrating", {})
-    logger.info("Integrating outputs...")
-    artifact = integrate(spec, res["outputs"], the_plan)
-
-    on_progress("final_verify", {})
-    logger.info("Running final verification...")
-
-    final_subtask = SubTask(
-        id="_final_verify",
-        description="Final integration verification",
-        acceptance_criteria=spec.acceptance_criteria,
-    )
-    final_verdict = verify(final_subtask, artifact, output_type=spec.output_type)
-
-    if memory is not None:
-        plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
-        _store_plan_memory(memory, spec, plan_desc, final_verdict.passed)
-
-    if final_verdict.passed:
-        checkpoint.clear(bid)
-
-    return {
-        "succeeded": final_verdict.passed,
-        "halted_at": None,
-        "plan": the_plan,
-        "spec": spec,
-        "subtask_results": subtask_results,
-        "artifact": artifact,
-        "final_verdict": final_verdict,
-        "aborted_reason": None,
-        "usage": budget.usage() if budget else None,
-        "build_id": bid,
-    }
+    finally:
+        set_progress_callback(None)
