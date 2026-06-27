@@ -94,3 +94,59 @@ def test_worker_and_judge_use_different_models(mock_ask, mock_run):
     verify(SUBTASK, "code")
     assert len(models_used) == 2
     assert models_used[0] != models_used[1]
+
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_success(mock_ask):
+    mock_ask.return_value = json.dumps({"score": 9, "issues": []})
+    from builder_agent.verify import verify
+    sql_code = "CREATE TABLE test (id INT);"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is True
+    assert v.score == 9
+    assert "Generated Schema" in v.exec_output
+    assert "Table: test" in v.exec_output
+
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_syntax_failure(mock_ask):
+    mock_ask.return_value = json.dumps(
+        {"score": 0, "issues": ["SQL execution failed: incomplete input"]}
+    )
+    from builder_agent.verify import verify
+    # Invalid syntax: incomplete input (missing closing parenthesis)
+    sql_code = "CREATE TABLE test (id INT"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is False
+    assert v.score == 0
+    assert len(v.issues) == 1
+    assert "SQL execution failed" in v.issues[0]
+
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_execution_failure(mock_ask):
+    mock_ask.return_value = json.dumps(
+        {"score": 0, "issues": ["no such table: nonexistent"]}
+    )
+    from builder_agent.verify import verify
+    sql_code = "INSERT INTO nonexistent VALUES (1);"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is False
+    assert v.score == 0
+    assert "no such table" in v.issues[0]
+
+
+@patch("builder_agent.verify.SqlVerifier.verify")
+@patch("builder_agent.verify.GenericVerifier.verify")
+def test_dispatcher_selection(mock_generic_verify, mock_sql_verify):
+    from builder_agent.verify import verify
+    verify(SUBTASK, "code", output_type="sql")
+    mock_sql_verify.assert_called_once_with(SUBTASK, "code")
+    mock_generic_verify.assert_not_called()
+
+    mock_sql_verify.reset_mock()
+    mock_generic_verify.reset_mock()
+
+    verify(SUBTASK, "code", output_type="unknown")
+    mock_generic_verify.assert_called_once_with(SUBTASK, "code")
+    mock_sql_verify.assert_not_called()

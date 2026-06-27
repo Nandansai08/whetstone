@@ -206,7 +206,7 @@ def orchestrate_subtask(
             "subtask": subtask.id, "iteration": i + 1,
         })
         logger.info("[%s] iter %d — verifying", subtask.id, i + 1)
-        verdict = verify(subtask, code)
+        verdict = verify(subtask, code, output_type=spec.output_type)
 
         on_progress("verdict", {
             "subtask": subtask.id,
@@ -356,7 +356,7 @@ def orchestrate(
         description="Final integration verification",
         acceptance_criteria=spec.acceptance_criteria,
     )
-    final_verdict = verify(final_subtask, artifact)
+    final_verdict = verify(final_subtask, artifact, output_type=spec.output_type)
 
     if memory is not None:
         plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
