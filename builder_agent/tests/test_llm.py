@@ -1,12 +1,16 @@
 import asyncio
+import json
 import os
 from unittest.mock import MagicMock, patch
 
 from builder_agent.config import ModelConfig
 from builder_agent.llm import (
+    _ask_anthropic,
+    _ask_openai,
+    _embed_openai,
     ask,
-    async_ask,
     ask_stream,
+    async_ask,
     embed,
     extract_json,
     register_embed_provider,
@@ -78,7 +82,6 @@ def test_anthropic_passes_model_id(mock_cls):
     client.messages.create.return_value = _mock_anthropic_response("ok")
     mock_cls.return_value = client
 
-    from builder_agent.llm import _ask_anthropic
     _ask_anthropic("test", model=ANTHROPIC_MODEL)
     call_kwargs = client.messages.create.call_args[1]
     assert call_kwargs["model"] == "claude-sonnet-4-6"
@@ -91,7 +94,6 @@ def test_anthropic_passes_system(mock_cls):
     client.messages.create.return_value = _mock_anthropic_response("ok")
     mock_cls.return_value = client
 
-    from builder_agent.llm import _ask_anthropic
     _ask_anthropic("test", model=ANTHROPIC_MODEL, system="be helpful")
     call_kwargs = client.messages.create.call_args[1]
     assert call_kwargs["system"] == "be helpful"
@@ -104,7 +106,6 @@ def test_anthropic_omits_system_when_empty(mock_cls):
     client.messages.create.return_value = _mock_anthropic_response("ok")
     mock_cls.return_value = client
 
-    from builder_agent.llm import _ask_anthropic
     _ask_anthropic("test", model=ANTHROPIC_MODEL)
     call_kwargs = client.messages.create.call_args[1]
     assert "system" not in call_kwargs
@@ -117,7 +118,6 @@ def test_openai_passes_model_id(mock_cls):
     client.chat.completions.create.return_value = _mock_openai_response("ok")
     mock_cls.return_value = client
 
-    from builder_agent.llm import _ask_openai
     _ask_openai("test", model=OPENAI_MODEL)
     call_kwargs = client.chat.completions.create.call_args[1]
     assert call_kwargs["model"] == "gpt-4o"
@@ -130,7 +130,6 @@ def test_openai_uses_system_message(mock_cls):
     client.chat.completions.create.return_value = _mock_openai_response("ok")
     mock_cls.return_value = client
 
-    from builder_agent.llm import _ask_openai
     _ask_openai("test", model=OPENAI_MODEL, system="be concise")
     call_kwargs = client.chat.completions.create.call_args[1]
     messages = call_kwargs["messages"]
@@ -144,7 +143,6 @@ def test_openai_custom_base_url(mock_cls):
     client.chat.completions.create.return_value = _mock_openai_response("ok")
     mock_cls.return_value = client
 
-    from builder_agent.llm import _ask_openai
     _ask_openai("test", model=CUSTOM_MODEL)
     init_kwargs = mock_cls.call_args[1]
     assert init_kwargs["base_url"] == "http://localhost:11434/v1"
@@ -186,7 +184,6 @@ def test_embed_openai_dispatches(mock_cls):
     client.embeddings.create.return_value = resp
     mock_cls.return_value = client
 
-    from builder_agent.llm import _embed_openai
     m = ModelConfig("openai", "text-embedding-3-small")
     result = _embed_openai("test text", model=m)
     assert result == [0.5, 0.6]
@@ -241,7 +238,6 @@ def test_extract_json_clean():
 def test_extract_json_trailing_text():
     raw = '{"score": 7, "issues": ["missing edge case"]}  Some extra commentary here.'
     result = extract_json(raw)
-    import json
     data = json.loads(result)
     assert data["score"] == 7
 
@@ -249,7 +245,6 @@ def test_extract_json_trailing_text():
 def test_extract_json_leading_text():
     raw = 'Here is my analysis:\n{"score": 8, "issues": []}\nDone.'
     result = extract_json(raw)
-    import json
     data = json.loads(result)
     assert data["score"] == 8
 
@@ -257,7 +252,6 @@ def test_extract_json_leading_text():
 def test_extract_json_fenced_with_extra():
     raw = '```json\n{"score": 9, "issues": []}\n```\nAnd some more text.'
     result = extract_json(raw)
-    import json
     data = json.loads(result)
     assert data["score"] == 9
 
@@ -265,7 +259,6 @@ def test_extract_json_fenced_with_extra():
 def test_extract_json_array():
     raw = 'Tasks:\n[{"id": "t1", "description": "do stuff"}]\nEnd.'
     result = extract_json(raw)
-    import json
     data = json.loads(result)
     assert len(data) == 1
 
@@ -273,7 +266,6 @@ def test_extract_json_array():
 def test_extract_json_nested_braces():
     raw = '{"a": {"b": 1}, "c": [1, 2]} extra'
     result = extract_json(raw)
-    import json
     data = json.loads(result)
     assert data["a"]["b"] == 1
 
@@ -281,7 +273,6 @@ def test_extract_json_nested_braces():
 def test_extract_json_string_with_braces():
     raw = '{"msg": "use {x} and }"}  trailing'
     result = extract_json(raw)
-    import json
     data = json.loads(result)
     assert data["msg"] == "use {x} and }"
 
