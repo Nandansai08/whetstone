@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import Callable
+
 from builder_agent import config
 from builder_agent.config import ModelConfig
-from builder_agent.llm import ask, strip_fences
+from builder_agent.llm import ask, ask_stream, strip_fences
 from builder_agent.schemas import MemoryRecord, Spec, SubTask
 
 _GENERATE_SYSTEM = (
@@ -36,6 +38,7 @@ def generate(
     feedback: str | None = None,
     memory_hints: list[MemoryRecord] | None = None,
     worker_model: ModelConfig | None = None,
+    on_chunk: Callable[[str], None] | None = None,
 ) -> str:
     criteria = "\n".join(f"- {c}" for c in subtask.acceptance_criteria)
     feedback_block = ""
@@ -65,9 +68,16 @@ def generate(
         hints_block=hints_block,
     )
     model = worker_model or config.WORKER_MODEL
-    return strip_fences(
-        ask(prompt, model=model, system=_GENERATE_SYSTEM)
-    )
+    if on_chunk is None:
+        return strip_fences(
+            ask(prompt, model=model, system=_GENERATE_SYSTEM)
+        )
+
+    chunks = []
+    for chunk in ask_stream(prompt, model=model, system=_GENERATE_SYSTEM):
+        chunks.append(chunk)
+        on_chunk(chunk)
+    return strip_fences("".join(chunks))
 
 
 def self_critique(

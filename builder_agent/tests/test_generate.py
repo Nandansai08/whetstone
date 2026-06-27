@@ -21,6 +21,12 @@ def _fake_generate(prompt, *, model, system="", max_tokens=4096):
     return "def add(a, b): return a + b"
 
 
+def _fake_generate_stream(prompt, *, model, system="", max_tokens=4096):
+    yield "def add("
+    yield "a, b): "
+    yield "return a + b"
+
+
 def _fake_critique(prompt, *, model, system="", max_tokens=4096):
     return "def add(a, b):\n    return a + b"
 
@@ -69,6 +75,17 @@ def test_generate_empty_hints_no_hints_block(mock_ask):
     generate(SUBTASK, SPEC, memory_hints=[])
     prompt_arg = mock_ask.call_args[0][0]
     assert "Hints from similar past builds" not in prompt_arg
+
+
+@patch("builder_agent.generate.ask_stream", side_effect=_fake_generate_stream)
+def test_generate_invokes_on_chunk(mock_ask_stream):
+    chunks_received = []
+    def callback(chunk):
+        chunks_received.append(chunk)
+
+    code = generate(SUBTASK, SPEC, on_chunk=callback)
+    assert code == "def add(a, b): return a + b"
+    assert chunks_received == ["def add(", "a, b): ", "return a + b"]
 
 
 @patch("builder_agent.generate.ask", side_effect=_fake_critique)

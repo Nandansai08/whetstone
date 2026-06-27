@@ -38,3 +38,12 @@ MEMORY_TOP_K = 3
 MEMORY_MIN_SIMILARITY = 0.4
 EMBEDDER = "tfidf"
 MAX_SUBTASKS = 5
+
+# Sandbox Configuration
+SANDBOX_BACKEND = "subprocess"      # "subprocess" | "container"
+SANDBOX_ENGINE = "docker"           # "docker" | "podman"
+SANDBOX_IMAGE = "python:3.11-slim"
+SANDBOX_MEMORY_LIMIT = "256m"
+SANDBOX_CPU_LIMIT = 1.0
+SANDBOX_NETWORK_ACCESS = False
+
