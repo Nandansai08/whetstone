@@ -260,6 +260,9 @@ def orchestrate_subtask(
 
 def _run_async(coro):
     try:
+        # asyncio.get_running_loop() raises RuntimeError specifically if there is
+        # no active event loop running in the current thread. This is safe to catch
+        # here as it serves as the standard loop detection check.
         loop = asyncio.get_running_loop()
     except RuntimeError:
         loop = None
@@ -306,6 +309,15 @@ async def _async_orchestrate(
     first_failure_reason = None
     any_failed = False
 
+    # Note on Cancellation Tradeoff:
+    # Python threads running inside asyncio.to_thread (orchestrate_subtask) do not
+    # support forceful cancellation/termination. Attempting to cancel the asyncio
+    # task wrapper would leave the underlying synchronous executor thread running
+    # in the background (potentially performing unsafe/concurrent LLM and sandbox
+    # operations). Thus, we do not forcefully cancel active tasks upon failure.
+    # Instead, we prevent scheduling any new subtasks (by checking not
+    # any_failed before scheduling) and wait for already in-flight subtasks
+    # to complete gracefully.
     while ready_ids or active_tasks:
         while ready_ids and not any_failed:
             st_id = ready_ids.pop(0)
