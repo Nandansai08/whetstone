@@ -40,30 +40,18 @@ def _mock_openai_response(text: str) -> MagicMock:
 
 @patch("builder_agent.llm._ask_anthropic")
 def test_ask_dispatches_to_anthropic(mock_fn):
-    from builder_agent.llm import _providers
-    orig = _providers.pop("anthropic", None)
-    try:
-        mock_fn.return_value = "hello"
-        result = ask("say hi", model=ANTHROPIC_MODEL)
-        assert result == "hello"
-        mock_fn.assert_called_once()
-    finally:
-        if orig is not None:
-            _providers["anthropic"] = orig
+    mock_fn.return_value = "hello"
+    result = ask("say hi", model=ANTHROPIC_MODEL)
+    assert result == "hello"
+    mock_fn.assert_called_once()
 
 
 @patch("builder_agent.llm._ask_openai")
 def test_ask_dispatches_to_openai(mock_fn):
-    from builder_agent.llm import _providers
-    orig = _providers.pop("openai", None)
-    try:
-        mock_fn.return_value = "hi there"
-        result = ask("say hi", model=OPENAI_MODEL)
-        assert result == "hi there"
-        mock_fn.assert_called_once()
-    finally:
-        if orig is not None:
-            _providers["openai"] = orig
+    mock_fn.return_value = "hi there"
+    result = ask("say hi", model=OPENAI_MODEL)
+    assert result == "hi there"
+    mock_fn.assert_called_once()
 
 
 def test_register_custom_provider():
