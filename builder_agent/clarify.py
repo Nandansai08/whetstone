@@ -1,3 +1,5 @@
+"""Requirements clarification and specification extraction module."""
+
 from __future__ import annotations
 
 import json
@@ -60,6 +62,16 @@ def detect_ambiguity(request: str) -> list[str]:
 
 
 def clarify(request: str, *, interactive: bool = True) -> Spec:
+    """Clarify the user request and extract a concrete Specification object.
+
+    Args:
+        request: The raw build request string.
+        interactive: If True, prompt the user for clarification.
+
+    Returns:
+        A Spec object containing the validated description, acceptance criteria,
+        assumptions, and output type.
+    """
     answers_block = ""
     if not interactive:
         answers_block = "No interactive session — use sensible defaults.\n"

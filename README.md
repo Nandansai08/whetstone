@@ -14,6 +14,7 @@
 
 <p align="center">
   <a href="https://github.com/Nandansai08/whetstone/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Nandansai08/whetstone/ci.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
+  <a href="https://Nandansai08.github.io/whetstone/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-blue?style=flat-square" alt="Documentation"></a>
   <a href="https://github.com/Nandansai08/whetstone/releases"><img src="https://img.shields.io/github/v/release/Nandansai08/whetstone?style=flat-square" alt="Release"></a>
   <a href="https://github.com/Nandansai08/whetstone/blob/main/LICENSE"><img src="https://img.shields.io/github/license/Nandansai08/whetstone?style=flat-square" alt="License"></a>
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.11+-blue?style=flat-square" alt="Python"></a>
@@ -23,6 +24,10 @@
 ---
 
 Whetstone takes a natural language request, clarifies it into a spec, plans subtasks, generates code with a worker LLM, verifies it with executable tests + a cross-model judge, refines on failure, and remembers what worked for next time.
+
+## Documentation
+
+For full guides, tutorials, and API reference docs, visit the official [Whetstone Documentation](https://Nandansai08.github.io/whetstone/).
 
 ## How It Works
 

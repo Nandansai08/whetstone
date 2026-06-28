@@ -1,3 +1,5 @@
+"""Command-line interface and interactive REPL entrypoint module."""
+
 from __future__ import annotations
 
 import argparse
@@ -1058,6 +1060,14 @@ output = 0.30
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the Whetstone command-line tool.
+
+    Args:
+        argv: List of command-line argument strings, or None to read sys.argv.
+
+    Returns:
+        The exit status code (0 for success, non-zero for failure).
+    """
     try:
         from dotenv import load_dotenv
         load_dotenv()
