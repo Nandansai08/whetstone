@@ -378,6 +378,9 @@ def _print_help():
         (cyan("/memory"), "List stored memory records"),
         (cyan("/memory show <id>"), "Show a specific record"),
         (cyan("/memory clear"), "Clear all records"),
+        (cyan("/export [filename]"), "Save the last build's artifact to a file"),
+        (cyan("/history"), "Show build history summary for this session"),
+        (cyan("/history <n>"), "Show detailed info for build #n"),
         (cyan("/help"), "Show this help"),
         (cyan("/quit"), "Exit"),
     ]
@@ -476,6 +479,119 @@ def _handle_memory_command(parts: list[str], memory: Memory) -> None:
         print(dim("  Usage: /memory [list|show <id>|clear]"))
 
 
+def _handle_export_command(parts: list[str], last_artifact: str | None) -> None:
+    if not last_artifact:
+        print(red("  No build artifact available to export yet."))
+        return
+
+    filename = parts[1] if len(parts) > 1 else "artifact.py"
+
+    import pathlib
+    target = pathlib.Path(filename)
+    try:
+        if target.parent:
+            target.parent.mkdir(parents=True, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(last_artifact)
+        print(f"  {green('✓')} Exported last build artifact to {bold(filename)}")
+    except Exception as e:
+        print(red(f"  Error: Failed to write to {filename}: {e}"))
+
+
+def _handle_history_command(parts: list[str], history: list[dict]) -> None:
+    if not history:
+        print(dim("  No builds have been performed in this session yet."))
+        return
+
+    if len(parts) > 1:
+        try:
+            idx = int(parts[1])
+        except ValueError:
+            print(red("  Invalid build number. Please specify an integer."))
+            return
+
+        if idx < 1 or idx > len(history):
+            print(red(f"  Invalid build number. Range: 1 to {len(history)}."))
+            return
+
+        item = history[idx - 1]
+        res = item["result"]
+        print(f"\n  {bold('Build')} {cyan(f'#{idx}')}")
+        print(f"    Request    {item['request']}")
+
+        spec = res.get("spec")
+        if spec:
+            print(f"    Spec       {spec.description}")
+
+        plan = res.get("plan")
+        if plan and plan.subtasks:
+            print("    Subtasks")
+            for sub in plan.subtasks:
+                print(f"      {dim('·')} {sub.id}: {sub.description}")
+
+        fv = res.get("final_verdict")
+        if fv:
+            status = green("Passed") if fv.passed else red("Failed")
+            print(f"    Verdict    {status} (Score: {fv.score}/10)")
+            if fv.issues:
+                print("    Issues")
+                for issue in fv.issues:
+                    print(f"      {dim('·')} {issue}")
+        else:
+            status = green("Succeeded") if res.get("succeeded") else red("Failed")
+            if res.get("aborted_reason"):
+                status = yellow(f"Aborted ({res['aborted_reason']})")
+            print(f"    Status     {status}")
+
+        sr = res.get("subtask_results", {})
+        if sr:
+            iters = sum(r.get("iterations", 0) for r in sr.values())
+            print(f"    Iterations {iters}")
+
+        usage = res.get("usage")
+        if usage:
+            tok = f"{usage['total_tokens']:,}" if "total_tokens" in usage else "N/A"
+            lim = f"{usage['limit']:,}" if "limit" in usage else "N/A"
+            print(f"    Tokens     {tok} / {lim}")
+
+        artifact = res.get("artifact")
+        if artifact:
+            lines = artifact.strip().splitlines()
+            print(f"    Output     {len(lines)} lines")
+            summary = "\n".join(lines[:5])
+            if len(lines) > 5:
+                summary += f"\n{dim('    ... (truncated)')}"
+            print("    Code Summary:")
+            for line in summary.splitlines():
+                print(f"      {line}")
+        print()
+    else:
+        print()
+        print(f"  {bold('Build History')}")
+        for item in history:
+            num = item["build_number"]
+            req = item["request"][:40].ljust(40)
+            res = item["result"]
+
+            if res.get("succeeded"):
+                status = green("PASSED")
+            elif res.get("aborted_reason"):
+                status = yellow(f"ABORTED ({res['aborted_reason']})")
+            else:
+                status = red("FAILED")
+
+            fv = res.get("final_verdict")
+            score_str = f"{fv.score}/10" if (fv and fv.score is not None) else "N/A"
+            elapsed_val = item.get("elapsed")
+            elapsed_str = f"{elapsed_val:.1f}s" if elapsed_val is not None else "N/A"
+
+            print(
+                f"    #{num:<3d} {req} {status:<15s} "
+                f"Score: {score_str:<6s} Time: {elapsed_str}"
+            )
+        print()
+
+
 # ── Interactive REPL ─────────────────────────────────────────────────
 
 
@@ -524,6 +640,8 @@ def _repl() -> int:
 
     memory = Memory()
     build_count = 0
+    history: list[dict] = []
+    last_artifact: str | None = None
     interactive_clarify = getattr(config, "INTERACTIVE_CLARIFY", True)
 
     print(dim("  Type what you want to build, or /help for commands."))
@@ -569,6 +687,16 @@ def _repl() -> int:
         if prompt.startswith("/memory"):
             parts = prompt.split()
             _handle_memory_command(parts, memory)
+            continue
+
+        if prompt == "/export" or prompt.startswith("/export "):
+            parts = prompt.split()
+            _handle_export_command(parts, last_artifact)
+            continue
+
+        if prompt == "/history" or prompt.startswith("/history "):
+            parts = prompt.split()
+            _handle_history_command(parts, history)
             continue
 
         if prompt.startswith("/"):
@@ -619,6 +747,17 @@ def _repl() -> int:
         _print_result(result)
         print(f"    Time   {dim(f'{elapsed:.1f}s')}")
         print()
+
+        # Update last artifact and build history
+        if result.get("artifact"):
+            last_artifact = result["artifact"]
+
+        history.append({
+            "build_number": build_count,
+            "request": prompt,
+            "result": result,
+            "elapsed": elapsed,
+        })
 
 
 # ── One-shot subcommands ─────────────────────────────────────────────

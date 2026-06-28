@@ -389,3 +389,68 @@ def test_progress_renderer_handles_chunk(capsys):
 
     assert "Generating iter 1:" in captured
     assert "    def add(a, b):\n        return a + b" in captured
+
+
+@patch("builder_agent.cli.input")
+@patch("builder_agent.cli.orchestrate")
+@patch("builder_agent.cli.detect_ambiguity")
+def test_repl_export_and_history(
+    mock_detect, mock_orchestrate, mock_input, tmp_path, capsys
+):
+    mock_detect.return_value = []
+    mock_orchestrate.return_value = _make_success_result()
+    mock_input.side_effect = [
+        "/export",
+        "/history",
+        "build request",
+        "/history",
+        "/history 1",
+        "/history 2",
+        "/history abc",
+        "/export",
+        "/export subdir/custom.py",
+        "/quit"
+    ]
+
+    import os
+    orig_cwd = os.getcwd()
+    os.chdir(tmp_path)
+    try:
+        from builder_agent.cli import _repl
+        _repl()
+    finally:
+        os.chdir(orig_cwd)
+
+    captured = capsys.readouterr().out
+
+    # 1. /export (no build yet)
+    assert "No build artifact available to export yet." in captured
+
+    # 2. /history (no builds yet)
+    assert "No builds have been performed in this session yet." in captured
+
+    # 3. build summary /history
+    assert "Build History" in captured
+    assert "#1   build request" in captured
+
+    # 4. build detailed /history 1
+    assert "Build #1" in captured
+    assert "Request    build request" in captured
+    assert "t1: add" in captured
+    assert "def add(a,b): return a+b" in captured
+
+    # 5. build detailed /history 2 (out of range)
+    assert "Invalid build number. Range: 1 to 1." in captured
+
+    # 6. build detailed /history abc (invalid number)
+    assert "Invalid build number. Please specify an integer." in captured
+
+    # 7. /export (default artifact.py)
+    assert os.path.exists(tmp_path / "artifact.py")
+    with open(tmp_path / "artifact.py") as f:
+        assert f.read() == "def add(a,b): return a+b"
+
+    # 8. /export custom (subdir/custom.py)
+    assert os.path.exists(tmp_path / "subdir" / "custom.py")
+    with open(tmp_path / "subdir" / "custom.py") as f:
+        assert f.read() == "def add(a,b): return a+b"
