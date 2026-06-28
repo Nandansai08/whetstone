@@ -99,11 +99,53 @@ _SQL_JUDGE_PROMPT = (
 )
 
 
+_SAFE_SQL_OP_NAMES = [
+    "SQLITE_SELECT",
+    "SQLITE_INSERT",
+    "SQLITE_UPDATE",
+    "SQLITE_DELETE",
+    "SQLITE_CREATE_TABLE",
+    "SQLITE_CREATE_TEMP_TABLE",
+    "SQLITE_CREATE_VIEW",
+    "SQLITE_CREATE_TEMP_VIEW",
+    "SQLITE_CREATE_INDEX",
+    "SQLITE_CREATE_TEMP_INDEX",
+    "SQLITE_DROP_TABLE",
+    "SQLITE_DROP_TEMP_TABLE",
+    "SQLITE_DROP_VIEW",
+    "SQLITE_DROP_TEMP_VIEW",
+    "SQLITE_DROP_INDEX",
+    "SQLITE_DROP_TEMP_INDEX",
+    "SQLITE_TRANSACTION",
+    "SQLITE_READ",
+    "SQLITE_FUNCTION",
+    "SQLITE_ALTER_TABLE",
+    "SQLITE_SAVEPOINT",
+    "SQLITE_PRAGMA",
+    "SQLITE_RECURSIVE",
+]
+
+_SAFE_SQL_OPS = {
+    getattr(sqlite3, name)
+    for name in _SAFE_SQL_OP_NAMES
+    if hasattr(sqlite3, name)
+}
+
+
+def _sql_authorizer(action, arg1, arg2, dbname, source_principal):
+    if action in (sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH):
+        return sqlite3.SQLITE_DENY
+    if action in _SAFE_SQL_OPS:
+        return sqlite3.SQLITE_OK
+    return sqlite3.SQLITE_DENY
+
+
 class SqlVerifier:
     def verify(self, subtask: SubTask, code: str) -> Verdict:
         schema_or_error = ""
         try:
             conn = sqlite3.connect(":memory:")
+            conn.set_authorizer(_sql_authorizer)
             cursor = conn.cursor()
             cursor.executescript(code)
 

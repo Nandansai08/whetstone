@@ -150,3 +150,16 @@ def test_dispatcher_selection(mock_generic_verify, mock_sql_verify):
     verify(SUBTASK, "code", output_type="unknown")
     mock_generic_verify.assert_called_once_with(SUBTASK, "code")
     mock_sql_verify.assert_not_called()
+
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_denies_attach(mock_ask):
+    mock_ask.return_value = json.dumps(
+        {"score": 0, "issues": ["SQLite execution failed with error: not authorized"]}
+    )
+    from builder_agent.verify import verify
+    sql_code = "ATTACH DATABASE 'malicious.db' AS malicious;"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is False
+    assert v.score == 0
+    assert any("not authorized" in issue for issue in v.issues)
