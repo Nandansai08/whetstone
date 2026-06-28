@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import threading
 from typing import Callable
 
 from builder_agent import config
@@ -14,6 +16,7 @@ from builder_agent.plan import plan as make_plan
 from builder_agent.schemas import (
     Attempt,
     MemoryRecord,
+    Plan,
     Spec,
     SubTask,
 )
@@ -22,6 +25,8 @@ from builder_agent.verify import verify
 logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[str, dict], None]
+
+_db_lock = threading.Lock()
 
 
 def _noop_progress(event: str, data: dict) -> None:
@@ -87,7 +92,8 @@ def _store_subtask_memory(
         embedding=embedding,
         record_type="subtask",
     )
-    memory.store(record)
+    with _db_lock:
+        memory.store(record)
 
 
 def _store_plan_memory(
@@ -108,7 +114,8 @@ def _store_plan_memory(
         embedding=embedding,
         record_type="plan",
     )
-    memory.store(record)
+    with _db_lock:
+        memory.store(record)
 
 
 def _detect_plateau(scores: list[int], patience: int) -> bool:
@@ -206,7 +213,7 @@ def orchestrate_subtask(
             "subtask": subtask.id, "iteration": i + 1,
         })
         logger.info("[%s] iter %d — verifying", subtask.id, i + 1)
-        verdict = verify(subtask, code)
+        verdict = verify(subtask, code, output_type=spec.output_type)
 
         on_progress("verdict", {
             "subtask": subtask.id,
@@ -251,6 +258,170 @@ def orchestrate_subtask(
     }
 
 
+def _run_async(coro):
+    try:
+        # asyncio.get_running_loop() raises RuntimeError specifically if there is
+        # no active event loop running in the current thread. This is safe to catch
+        # here as it serves as the standard loop detection check.
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(asyncio.run, coro)
+            return future.result()
+    else:
+        return asyncio.run(coro)
+
+
+async def _async_orchestrate(
+    spec: Spec,
+    the_plan: Plan,
+    memory: Memory | None,
+    budget: TokenBudget | None,
+    on_progress: ProgressCallback,
+) -> dict:
+    all_plan_ids = {st.id for st in the_plan.subtasks}
+    in_degree = {
+        st.id: sum(1 for d in st.depends_on if d in all_plan_ids)
+        for st in the_plan.subtasks
+    }
+    adjacency = {st.id: [] for st in the_plan.subtasks}
+    for st in the_plan.subtasks:
+        for d in st.depends_on:
+            if d in all_plan_ids:
+                adjacency[d].append(st.id)
+
+    subtask_by_id = {st.id: st for st in the_plan.subtasks}
+    total = len(the_plan.subtasks)
+    subtask_indices = {st.id: i for i, st in enumerate(the_plan.subtasks)}
+
+    outputs: dict[str, str] = {}
+    subtask_results: dict[str, dict] = {}
+
+    ready_ids = [sid for sid, deg in in_degree.items() if deg == 0]
+    ready_ids.sort(key=lambda x: subtask_indices[x])
+
+    active_tasks = {}  # Task -> str (subtask id)
+    first_failure_id = None
+    first_failure_reason = None
+    any_failed = False
+
+    # Note on Cancellation Tradeoff:
+    # Python threads running inside asyncio.to_thread (orchestrate_subtask) do not
+    # support forceful cancellation/termination. Attempting to cancel the asyncio
+    # task wrapper would leave the underlying synchronous executor thread running
+    # in the background (potentially performing unsafe/concurrent LLM and sandbox
+    # operations). Thus, we do not forcefully cancel active tasks upon failure.
+    # Instead, we prevent scheduling any new subtasks (by checking not
+    # any_failed before scheduling) and wait for already in-flight subtasks
+    # to complete gracefully.
+    while ready_ids or active_tasks:
+        while ready_ids and not any_failed:
+            st_id = ready_ids.pop(0)
+            subtask = subtask_by_id[st_id]
+
+            if budget and budget.exceeded():
+                if not any_failed:
+                    any_failed = True
+                    first_failure_id = st_id
+                    first_failure_reason = "token_budget"
+                subtask_results[st_id] = {
+                    "succeeded": False,
+                    "attempt": None,
+                    "iterations": 0,
+                    "escalated": False,
+                    "aborted_reason": "token_budget",
+                }
+                on_progress("budget_exceeded", {"subtask": st_id})
+                continue
+
+            idx = subtask_indices[st_id]
+            on_progress("subtask_start", {
+                "subtask": st_id,
+                "description": subtask.description,
+                "index": idx,
+                "total": total,
+            })
+
+            task = asyncio.create_task(
+                asyncio.to_thread(
+                    orchestrate_subtask,
+                    subtask,
+                    spec,
+                    memory=memory,
+                    budget=budget,
+                    on_progress=on_progress,
+                )
+            )
+            active_tasks[task] = st_id
+
+        if not active_tasks:
+            break
+
+        done, _ = await asyncio.wait(
+            active_tasks.keys(),
+            return_when=asyncio.FIRST_COMPLETED
+        )
+
+        for task in done:
+            st_id = active_tasks.pop(task)
+            idx = subtask_indices[st_id]
+
+            try:
+                result = task.result()
+            except Exception as e:
+                logger.error("Subtask %s raised exception: %s", st_id, e)
+                result = {
+                    "succeeded": False,
+                    "attempt": None,
+                    "iterations": 0,
+                    "escalated": False,
+                    "aborted_reason": str(e),
+                }
+
+            subtask_results[st_id] = result
+
+            on_progress("subtask_done", {
+                "subtask": st_id,
+                "succeeded": result["succeeded"],
+                "iterations": result["iterations"],
+                "index": idx,
+                "total": total,
+            })
+
+            if result["succeeded"]:
+                outputs[st_id] = result["attempt"].code
+                deps = sorted(adjacency[st_id], key=lambda x: subtask_indices[x])
+                for dep_id in deps:
+                    in_degree[dep_id] -= 1
+                    if in_degree[dep_id] == 0:
+                        ready_ids.append(dep_id)
+            else:
+                if not any_failed:
+                    any_failed = True
+                    first_failure_id = st_id
+                    first_failure_reason = result.get("aborted_reason")
+
+    if len(subtask_results) < total and not any_failed:
+        for st in the_plan.subtasks:
+            if st.id not in subtask_results:
+                any_failed = True
+                first_failure_id = st.id
+                first_failure_reason = "dependency_failed"
+                break
+
+    return {
+        "succeeded": not any_failed,
+        "first_failure_id": first_failure_id,
+        "first_failure_reason": first_failure_reason,
+        "outputs": outputs,
+        "subtask_results": subtask_results,
+    }
+
+
 def orchestrate(
     request: str,
     *,
@@ -282,71 +453,37 @@ def orchestrate(
         ", ".join(s.id for s in the_plan.subtasks),
     )
 
-    outputs: dict[str, str] = {}
-    subtask_results: dict[str, dict] = {}
-    total = len(the_plan.subtasks)
-
-    for idx, subtask in enumerate(the_plan.subtasks):
-        if budget and budget.exceeded():
-            logger.info("Token budget exceeded before subtask %s", subtask.id)
-            on_progress("budget_exceeded", {"subtask": subtask.id})
-            if memory is not None:
-                plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
-                _store_plan_memory(memory, spec, plan_desc, False)
-            return {
-                "succeeded": False,
-                "halted_at": subtask.id,
-                "plan": the_plan,
-                "spec": spec,
-                "subtask_results": subtask_results,
-                "artifact": None,
-                "final_verdict": None,
-                "aborted_reason": "token_budget",
-                "usage": budget.usage() if budget else None,
-            }
-
-        on_progress("subtask_start", {
-            "subtask": subtask.id,
-            "description": subtask.description,
-            "index": idx,
-            "total": total,
-        })
-
-        result = orchestrate_subtask(
-            subtask, spec, memory=memory, budget=budget,
+    res = _run_async(
+        _async_orchestrate(
+            spec,
+            the_plan,
+            memory=memory,
+            budget=budget,
             on_progress=on_progress,
         )
-        subtask_results[subtask.id] = result
+    )
 
-        on_progress("subtask_done", {
-            "subtask": subtask.id,
-            "succeeded": result["succeeded"],
-            "iterations": result["iterations"],
-            "index": idx,
-            "total": total,
-        })
+    subtask_results = res["subtask_results"]
 
-        if not result["succeeded"]:
-            if memory is not None:
-                plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
-                _store_plan_memory(memory, spec, plan_desc, False)
-            return {
-                "succeeded": False,
-                "halted_at": subtask.id,
-                "plan": the_plan,
-                "spec": spec,
-                "subtask_results": subtask_results,
-                "artifact": None,
-                "final_verdict": None,
-                "aborted_reason": result.get("aborted_reason"),
-                "usage": budget.usage() if budget else None,
-            }
-
-        outputs[subtask.id] = result["attempt"].code
+    if not res["succeeded"]:
+        if memory is not None:
+            plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
+            _store_plan_memory(memory, spec, plan_desc, False)
+        return {
+            "succeeded": False,
+            "halted_at": res["first_failure_id"],
+            "plan": the_plan,
+            "spec": spec,
+            "subtask_results": subtask_results,
+            "artifact": None,
+            "final_verdict": None,
+            "aborted_reason": res["first_failure_reason"],
+            "usage": budget.usage() if budget else None,
+        }
 
     on_progress("integrating", {})
     logger.info("Integrating outputs...")
-    artifact = integrate(spec, outputs, the_plan)
+    artifact = integrate(spec, res["outputs"], the_plan)
 
     on_progress("final_verify", {})
     logger.info("Running final verification...")
@@ -356,7 +493,7 @@ def orchestrate(
         description="Final integration verification",
         acceptance_criteria=spec.acceptance_criteria,
     )
-    final_verdict = verify(final_subtask, artifact)
+    final_verdict = verify(final_subtask, artifact, output_type=spec.output_type)
 
     if memory is not None:
         plan_desc = " -> ".join(s.id for s in the_plan.subtasks)

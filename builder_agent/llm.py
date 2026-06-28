@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -84,6 +85,7 @@ def extract_json(text: str) -> str:
 
 def register_provider(name: str, fn: Callable) -> None:
     _providers[name] = fn
+
 
 
 def register_stream_provider(name: str, fn: Callable) -> None:
@@ -383,3 +385,15 @@ def _embed_voyage(text: str, *, model: ModelConfig) -> list[float]:
     client = voyageai.Client(api_key=api_key)
     result = client.embed([text], model=model.model_id)
     return result.embeddings[0]
+
+
+async def async_ask(
+    prompt: str,
+    *,
+    model: ModelConfig,
+    system: str = "",
+    max_tokens: int = 4096,
+) -> str:
+    return await asyncio.to_thread(
+        ask, prompt, model=model, system=system, max_tokens=max_tokens
+    )

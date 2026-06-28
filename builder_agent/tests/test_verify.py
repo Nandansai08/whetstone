@@ -117,7 +117,7 @@ def test_verify_package_runs_correctly(mock_ask, mock_run):
         "pkg/core.py": "def add(a, b): return a + b\n"
     }
 
-    v = verify(SUBTASK, package_files)
+    v = verify(SUBTASK, package_files, output_type="python_package")
     assert v.passed is True
     assert v.tests_passed is True
     assert v.score == 10
@@ -130,3 +130,86 @@ def test_verify_package_runs_correctly(mock_ask, mock_run):
     assert "import pytest" in script
     assert "pytest.main" in script
 
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_success(mock_ask):
+    mock_ask.return_value = json.dumps({"score": 9, "issues": []})
+    from builder_agent.verify import verify
+    sql_code = "CREATE TABLE test (id INT);"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is True
+    assert v.score == 9
+    assert "Generated Schema" in v.exec_output
+    assert "Table: test" in v.exec_output
+
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_syntax_failure(mock_ask):
+    mock_ask.return_value = json.dumps(
+        {"score": 0, "issues": ["SQL execution failed: incomplete input"]}
+    )
+    from builder_agent.verify import verify
+    # Invalid syntax: incomplete input (missing closing parenthesis)
+    sql_code = "CREATE TABLE test (id INT"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is False
+    assert v.score == 0
+    assert len(v.issues) == 1
+    assert "SQL execution failed" in v.issues[0]
+
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_execution_failure(mock_ask):
+    mock_ask.return_value = json.dumps(
+        {"score": 0, "issues": ["no such table: nonexistent"]}
+    )
+    from builder_agent.verify import verify
+    sql_code = "INSERT INTO nonexistent VALUES (1);"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is False
+    assert v.score == 0
+    assert "no such table" in v.issues[0]
+
+
+@patch("builder_agent.verify.SqlVerifier.verify")
+@patch("builder_agent.verify.GenericVerifier.verify")
+@patch("builder_agent.verify.PythonPackageVerifier.verify")
+def test_dispatcher_selection(
+    mock_package_verify, mock_generic_verify, mock_sql_verify
+):
+    from builder_agent.verify import verify
+    verify(SUBTASK, "code", output_type="sql")
+    mock_sql_verify.assert_called_once_with(SUBTASK, "code")
+    mock_generic_verify.assert_not_called()
+    mock_package_verify.assert_not_called()
+
+    mock_sql_verify.reset_mock()
+    mock_generic_verify.reset_mock()
+    mock_package_verify.reset_mock()
+
+    verify(SUBTASK, "code", output_type="unknown")
+    mock_generic_verify.assert_called_once_with(SUBTASK, "code")
+    mock_sql_verify.assert_not_called()
+    mock_package_verify.assert_not_called()
+
+    mock_sql_verify.reset_mock()
+    mock_generic_verify.reset_mock()
+    mock_package_verify.reset_mock()
+
+    verify(SUBTASK, {"file.py": "code"}, output_type="python_package")
+    mock_package_verify.assert_called_once_with(SUBTASK, {"file.py": "code"})
+    mock_generic_verify.assert_not_called()
+    mock_sql_verify.assert_not_called()
+
+
+@patch("builder_agent.verify.ask")
+def test_sql_verifier_denies_attach(mock_ask):
+    mock_ask.return_value = json.dumps(
+        {"score": 0, "issues": ["SQLite execution failed with error: not authorized"]}
+    )
+    from builder_agent.verify import verify
+    sql_code = "ATTACH DATABASE 'malicious.db' AS malicious;"
+    v = verify(SUBTASK, sql_code, output_type="sql")
+    assert v.passed is False
+    assert v.score == 0
+    assert any("not authorized" in issue for issue in v.issues)
