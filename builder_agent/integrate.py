@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 import re
 
 from builder_agent import config
 from builder_agent.llm import ask, extract_json
+from builder_agent.safety import is_safe_relative_path
 from builder_agent.schemas import Plan, Spec
 
 _INTEGRATE_PACKAGE_SYSTEM = (
@@ -26,22 +26,6 @@ _INTEGRATE_PACKAGE_PROMPT = (
     "Create a proper __init__.py that exposes the main public interface. "
     "Return a JSON object: {{\"path\": \"content\"}}."
 )
-
-
-def _is_safe_relative_path(path: str) -> bool:
-    """Validate that the path is relative and does not permit directory traversal."""
-    # Reject absolute paths (starting with / or matching drive letter on Windows)
-    if os.path.isabs(path) or path.startswith(("/", "\\")):
-        return False
-    # Reject drive letter (e.g. C:) or special characters
-    if ":" in path:
-        return False
-    # Reject path traversal (e.g. contain ..)
-    parts = path.replace("\\", "/").split("/")
-    for part in parts:
-        if part == "..":
-            return False
-    return True
 
 
 def _extract_imports(code: str) -> tuple[list[str], str]:
@@ -105,7 +89,7 @@ def integrate(spec: Spec, outputs: dict[str, str], plan: Plan) -> str | dict[str
             )
 
         for path in package_data.keys():
-            if not _is_safe_relative_path(path):
+            if not is_safe_relative_path(path):
                 raise ValueError(
                     f"Unsafe path traversal/absolute path detected: {path}"
                 )

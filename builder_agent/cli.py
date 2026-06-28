@@ -16,6 +16,7 @@ from builder_agent.clarify import detect_ambiguity
 from builder_agent.llm import set_budget
 from builder_agent.memory import Memory
 from builder_agent.orchestrate import orchestrate
+from builder_agent.safety import validate_and_resolve_path
 
 # ── Silence noisy HTTP loggers at import time ────────────────────────
 
@@ -372,11 +373,8 @@ def _print_result(result: dict, output_path: str = "", output_dir: str = "") -> 
     if artifact:
         if isinstance(artifact, dict):
             out_dir = output_dir or output_path or "./output_package"
-            abs_out_dir = os.path.abspath(out_dir)
             for rel_path, content in artifact.items():
-                dest = os.path.abspath(os.path.join(abs_out_dir, rel_path))
-                if not dest.startswith(abs_out_dir + os.sep) and dest != abs_out_dir:
-                    raise ValueError(f"Unsafe path traversal detected: {rel_path}")
+                dest = validate_and_resolve_path(out_dir, rel_path)
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 with open(dest, "w", encoding="utf-8") as f:
                     f.write(content)
