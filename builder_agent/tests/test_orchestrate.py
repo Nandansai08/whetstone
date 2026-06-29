@@ -405,6 +405,91 @@ def test_final_verify_uses_spec_criteria(
     assert "multiplies" in all_text
 
 
+# ---- Resumable builds ----
+
+RESUME_SPEC = Spec(
+    request="resume test calc",
+    description="A two-step calculator",
+    acceptance_criteria=["adds", "subs"],
+    assumptions=[],
+    output_type="python_module",
+)
+
+
+def _plan_2_subtasks(prompt, *, model, system="", max_tokens=4096):
+    return json.dumps([
+        {
+            "id": "t1", "description": "add",
+            "acceptance_criteria": ["adds"], "depends_on": [],
+        },
+        {
+            "id": "t2", "description": "sub",
+            "acceptance_criteria": ["subs"], "depends_on": ["t1"],
+        },
+    ])
+
+
+def _clarify_resume_response(prompt, *, model, system="", max_tokens=4096):
+    return json.dumps({
+        "description": RESUME_SPEC.description,
+        "acceptance_criteria": RESUME_SPEC.acceptance_criteria,
+        "assumptions": [],
+        "output_type": "python_module",
+    })
+
+
+def _verify_ask_side(prompt, *, model, system="", max_tokens=4096):
+    if "judge" in (system or "").lower():
+        return json.dumps({"score": 9, "issues": []})
+    return "assert True"
+
+
+@patch("builder_agent.generate.ask_stream")
+@patch("builder_agent.config.WORKER_MODEL", WORKER)
+@patch("builder_agent.config.JUDGE_MODEL", JUDGE)
+@patch("builder_agent.config.MAX_ITERATIONS", 1)
+@patch("builder_agent.verify.run_code")
+@patch("builder_agent.clarify.ask", side_effect=_clarify_resume_response)
+@patch("builder_agent.plan.ask", side_effect=_plan_2_subtasks)
+@patch("builder_agent.generate.ask")
+@patch("builder_agent.verify.ask", side_effect=_verify_ask_side)
+def test_resume_skips_already_completed_subtasks(
+    mock_verify_ask, mock_gen_ask, mock_plan_ask,
+    mock_clarify_ask, mock_run, mock_gen_ask_stream,
+):
+    mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
+    gen_calls = []
+
+    def gen_side(prompt, *, model, system="", max_tokens=4096):
+        gen_calls.append(prompt)
+        return "code"
+
+    mock_gen_ask.side_effect = gen_side
+
+    # run 1: t1 passes, t2's tests fail. run 2 (resumed): t2 passes, then
+    # final integration verify passes too.
+    mock_run.side_effect = [
+        (True, "ok"), (False, "Error"), (True, "ok"), (True, "ok"),
+    ]
+
+    from builder_agent.orchestrate import orchestrate
+
+    result1 = orchestrate(RESUME_SPEC.request, interactive=False)
+    assert result1["succeeded"] is False
+    assert result1["halted_at"] == "t2"
+    bid = result1["build_id"]
+    calls_after_run1 = len(gen_calls)
+
+    result2 = orchestrate(RESUME_SPEC.request, interactive=False, resume=True)
+    assert result2["succeeded"] is True
+    assert result2["build_id"] == bid
+
+    # t1 wasn't regenerated on resume — no new calls reference its subtask
+    new_calls = gen_calls[calls_after_run1:]
+    assert new_calls, "expected resume to retry t2"
+    assert not any("add" in c and "sub" not in c for c in new_calls)
+
+
 @patch("builder_agent.config.WORKER_MODEL", WORKER)
 @patch("builder_agent.config.JUDGE_MODEL", JUDGE)
 @patch("builder_agent.verify.run_code", return_value=(True, "ok"))

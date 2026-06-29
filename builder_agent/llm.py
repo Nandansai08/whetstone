@@ -4,8 +4,10 @@ import asyncio
 import json
 import logging
 import os
+import time
 from typing import Callable, Generator
 
+from builder_agent import config
 from builder_agent.config import ModelConfig
 
 for _name in ("httpx", "httpcore", "openai", "anthropic"):
@@ -96,6 +98,25 @@ def register_embed_provider(name: str, fn: Callable) -> None:
     _embed_providers[name] = fn
 
 
+def _with_retry(fn: Callable, *args, **kwargs):
+    """Retry transient provider failures with exponential backoff.
+
+    RuntimeError/ValueError are config errors (bad key, unknown provider) —
+    retrying them just fails the same way, so they pass through immediately.
+    """
+    last_exc: Exception | None = None
+    for attempt in range(config.MAX_RETRIES + 1):
+        try:
+            return fn(*args, **kwargs)
+        except (RuntimeError, ValueError):
+            raise
+        except Exception as e:
+            last_exc = e
+            if attempt < config.MAX_RETRIES:
+                time.sleep(config.RETRY_DELAY * (2 ** attempt))
+    raise last_exc
+
+
 def embed(
     text: str,
     *,
@@ -104,7 +125,7 @@ def embed(
     fn = _embed_providers.get(model.provider)
     if fn is None:
         fn = _default_embed_provider(model.provider)
-    return fn(text, model=model)
+    return _with_retry(fn, text, model=model)
 
 
 def ask(
@@ -117,7 +138,9 @@ def ask(
     fn = _providers.get(model.provider)
     if fn is None:
         fn = _default_provider(model.provider)
-    return fn(prompt, model=model, system=system, max_tokens=max_tokens)
+    return _with_retry(
+        fn, prompt, model=model, system=system, max_tokens=max_tokens
+    )
 
 
 def ask_stream(

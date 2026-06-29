@@ -36,7 +36,7 @@ BANNER = r"""
     \_/\_/  |_| |_|\___|\__|___/\__\___/|_| |_|\___|
 """.strip()
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 EXIT_SUCCESS = 0
 EXIT_FAILURE = 1
 EXIT_ABORTED = 2
@@ -337,6 +337,10 @@ def _print_result(result: dict, output_path: str = "", output_dir: str = "") -> 
     else:
         print(f"  {red('●')} {bold(red('BUILD FAILED'))}")
 
+    if not succeeded and result.get("halted_at") and result.get("build_id"):
+        bid = result["build_id"]
+        print(f"    {dim(f'Resume with: --resume (build {bid})')}")
+
     if fv:
         bar = _score_bar(fv.score, config.SCORE_THRESHOLD)
         print(f"    Score  {bar}")
@@ -397,6 +401,8 @@ def _print_help():
         (cyan("/export [filename]"), "Save the last build's artifact to a file"),
         (cyan("/history"), "Show build history summary for this session"),
         (cyan("/history <n>"), "Show detailed info for build #n"),
+        (cyan("/trace <n>"), "List subtasks with a recorded iteration trace"),
+        (cyan("/trace <n> <subtask_id>"), "Show the agent loop trace for a subtask"),
         (cyan("/help"), "Show this help"),
         (cyan("/quit"), "Exit"),
     ]
@@ -608,6 +614,61 @@ def _handle_history_command(parts: list[str], history: list[dict]) -> None:
         print()
 
 
+def _handle_trace_command(parts: list[str], history: list[dict]) -> None:
+    if not history:
+        print(dim("  No builds have been performed in this session yet."))
+        return
+
+    if len(parts) < 2:
+        print(dim("  Usage: /trace <build#> [subtask_id]"))
+        return
+
+    try:
+        idx = int(parts[1])
+    except ValueError:
+        print(red("  Invalid build number. Please specify an integer."))
+        return
+
+    if idx < 1 or idx > len(history):
+        print(red(f"  Invalid build number. Range: 1 to {len(history)}."))
+        return
+
+    sr = history[idx - 1]["result"].get("subtask_results", {})
+    if not sr:
+        print(dim("  No subtask results recorded for this build."))
+        return
+
+    if len(parts) < 3:
+        print(f"\n  {bold('Subtasks')} in build {cyan(f'#{idx}')}")
+        for sid, r in sr.items():
+            n = len(r.get("attempts") or [])
+            print(f"    {cyan(sid)} {dim(f'{n} iteration(s) recorded')}")
+        print(dim("\n  Usage: /trace <build#> <subtask_id>"))
+        return
+
+    sid = parts[2]
+    if sid not in sr:
+        print(red(f"  Unknown subtask '{sid}' in build #{idx}."))
+        return
+
+    attempts = sr[sid].get("attempts") or []
+    if not attempts:
+        print(dim(f"  No iteration trace recorded for '{sid}'."))
+        return
+
+    print(f"\n  {bold('Trace')} {cyan(sid)} {dim(f'({len(attempts)} iterations)')}")
+    for a in attempts:
+        v = a.verdict
+        status = green("PASSED") if v.passed else red("FAILED")
+        bar = _score_bar(v.score, config.SCORE_THRESHOLD)
+        print(f"\n  {bold(f'Iteration {a.iteration + 1}')}  {status}  {bar}")
+        if v.issues:
+            for issue in v.issues:
+                print(f"    {dim('·')} {issue}")
+        _code_block(a.code)
+    print()
+
+
 # ── Interactive REPL ─────────────────────────────────────────────────
 
 
@@ -713,6 +774,11 @@ def _repl() -> int:
         if prompt == "/history" or prompt.startswith("/history "):
             parts = prompt.split()
             _handle_history_command(parts, history)
+            continue
+
+        if prompt == "/trace" or prompt.startswith("/trace "):
+            parts = prompt.split()
+            _handle_trace_command(parts, history)
             continue
 
         if prompt.startswith("/"):
@@ -826,6 +892,7 @@ def _cmd_build(args) -> int:
         memory=memory,
         budget=budget,
         on_progress=progress or (lambda e, d: None),
+        resume=args.resume,
     )
 
     if not args.json:
@@ -1000,6 +1067,10 @@ def main(argv: list[str] | None = None) -> int:
     build_p.add_argument(
         "--json", action="store_true",
         help="Emit structured JSON result",
+    )
+    build_p.add_argument(
+        "--resume", action="store_true",
+        help="Resume from the last checkpoint for this request",
     )
 
     mem_p = sub.add_parser("memory", help="Manage memory records")

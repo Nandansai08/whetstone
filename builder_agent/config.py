@@ -39,6 +39,9 @@ MEMORY_MIN_SIMILARITY = 0.4
 EMBEDDER = "tfidf"
 MAX_SUBTASKS = 5
 INTERACTIVE_CLARIFY = True
+MAX_RETRIES = 3
+RETRY_DELAY = 1.0
+CHECKPOINT_DIR = "./.whetstone_checkpoints"
 
 # Sandbox Configuration
 SANDBOX_BACKEND = "subprocess"      # "subprocess" | "container"

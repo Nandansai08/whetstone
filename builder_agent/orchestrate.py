@@ -5,7 +5,7 @@ import logging
 import threading
 from typing import Callable
 
-from builder_agent import config
+from builder_agent import checkpoint, config
 from builder_agent.budget import TokenBudget
 from builder_agent.clarify import clarify
 from builder_agent.generate import generate, self_critique
@@ -239,6 +239,7 @@ def orchestrate_subtask(
             return {
                 "succeeded": True,
                 "attempt": best,
+                "attempts": attempts,
                 "iterations": i + 1,
                 "escalated": escalated,
                 "aborted_reason": None,
@@ -252,6 +253,7 @@ def orchestrate_subtask(
     return {
         "succeeded": False,
         "attempt": best,
+        "attempts": attempts,
         "iterations": len(attempts),
         "escalated": escalated,
         "aborted_reason": aborted_reason,
@@ -282,7 +284,13 @@ async def _async_orchestrate(
     memory: Memory | None,
     budget: TokenBudget | None,
     on_progress: ProgressCallback,
+    build_id: str,
+    outputs: dict[str, str] | None = None,
+    completed_ids: set[str] | None = None,
 ) -> dict:
+    outputs = dict(outputs or {})
+    completed_ids = set(completed_ids or set())
+
     all_plan_ids = {st.id for st in the_plan.subtasks}
     in_degree = {
         st.id: sum(1 for d in st.depends_on if d in all_plan_ids)
@@ -298,10 +306,21 @@ async def _async_orchestrate(
     total = len(the_plan.subtasks)
     subtask_indices = {st.id: i for i, st in enumerate(the_plan.subtasks)}
 
-    outputs: dict[str, str] = {}
-    subtask_results: dict[str, dict] = {}
+    subtask_results: dict[str, dict] = {
+        sid: {
+            "succeeded": True, "attempt": None,
+            "iterations": 0, "escalated": False, "aborted_reason": None,
+        }
+        for sid in completed_ids
+    }
+    for sid in completed_ids:
+        for dep_id in adjacency.get(sid, []):
+            in_degree[dep_id] -= 1
 
-    ready_ids = [sid for sid, deg in in_degree.items() if deg == 0]
+    ready_ids = [
+        sid for sid, deg in in_degree.items()
+        if deg == 0 and sid not in completed_ids
+    ]
     ready_ids.sort(key=lambda x: subtask_indices[x])
 
     active_tasks = {}  # Task -> str (subtask id)
@@ -394,6 +413,7 @@ async def _async_orchestrate(
 
             if result["succeeded"]:
                 outputs[st_id] = result["attempt"].code
+                completed_ids.add(st_id)
                 deps = sorted(adjacency[st_id], key=lambda x: subtask_indices[x])
                 for dep_id in deps:
                     in_degree[dep_id] -= 1
@@ -404,6 +424,8 @@ async def _async_orchestrate(
                     any_failed = True
                     first_failure_id = st_id
                     first_failure_reason = result.get("aborted_reason")
+
+            checkpoint.save(build_id, spec, the_plan, outputs, completed_ids)
 
     if len(subtask_results) < total and not any_failed:
         for st in the_plan.subtasks:
@@ -429,29 +451,51 @@ def orchestrate(
     interactive: bool = True,
     budget: TokenBudget | None = None,
     on_progress: ProgressCallback = _noop_progress,
+    resume: bool = False,
 ) -> dict:
-    on_progress("clarifying", {})
-    logger.info("Clarifying request...")
-    spec = clarify(request, interactive=interactive)
-    on_progress("clarified", {"description": spec.description})
-    logger.info("Spec: %s", spec.description)
+    bid = checkpoint.build_id(request)
+    ckpt = checkpoint.load(bid) if resume else None
 
-    on_progress("planning", {})
-    logger.info("Planning...")
-    the_plan = make_plan(spec, memory=memory)
-    on_progress("planned", {
-        "count": len(the_plan.subtasks),
-        "ids": [s.id for s in the_plan.subtasks],
-        "subtasks": [
-            {"id": s.id, "description": s.description}
-            for s in the_plan.subtasks
-        ],
-    })
-    logger.info(
-        "Plan: %d subtasks — %s",
-        len(the_plan.subtasks),
-        ", ".join(s.id for s in the_plan.subtasks),
-    )
+    if ckpt is not None:
+        spec = ckpt["spec"]
+        the_plan = ckpt["plan"]
+        outputs0 = ckpt["outputs"]
+        completed_ids0 = ckpt["completed_ids"]
+        on_progress("resumed", {
+            "build_id": bid,
+            "completed": len(completed_ids0),
+            "total": len(the_plan.subtasks),
+        })
+        logger.info(
+            "Resumed build %s — %d/%d subtasks already done",
+            bid, len(completed_ids0), len(the_plan.subtasks),
+        )
+    else:
+        on_progress("clarifying", {})
+        logger.info("Clarifying request...")
+        spec = clarify(request, interactive=interactive)
+        on_progress("clarified", {"description": spec.description})
+        logger.info("Spec: %s", spec.description)
+
+        on_progress("planning", {})
+        logger.info("Planning...")
+        the_plan = make_plan(spec, memory=memory)
+        on_progress("planned", {
+            "count": len(the_plan.subtasks),
+            "ids": [s.id for s in the_plan.subtasks],
+            "subtasks": [
+                {"id": s.id, "description": s.description}
+                for s in the_plan.subtasks
+            ],
+        })
+        logger.info(
+            "Plan: %d subtasks — %s",
+            len(the_plan.subtasks),
+            ", ".join(s.id for s in the_plan.subtasks),
+        )
+        outputs0 = {}
+        completed_ids0 = set()
+        checkpoint.save(bid, spec, the_plan, outputs0, completed_ids0)
 
     res = _run_async(
         _async_orchestrate(
@@ -460,6 +504,9 @@ def orchestrate(
             memory=memory,
             budget=budget,
             on_progress=on_progress,
+            build_id=bid,
+            outputs=outputs0,
+            completed_ids=completed_ids0,
         )
     )
 
@@ -479,6 +526,7 @@ def orchestrate(
             "final_verdict": None,
             "aborted_reason": res["first_failure_reason"],
             "usage": budget.usage() if budget else None,
+            "build_id": bid,
         }
 
     on_progress("integrating", {})
@@ -499,6 +547,9 @@ def orchestrate(
         plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
         _store_plan_memory(memory, spec, plan_desc, final_verdict.passed)
 
+    if final_verdict.passed:
+        checkpoint.clear(bid)
+
     return {
         "succeeded": final_verdict.passed,
         "halted_at": None,
@@ -509,4 +560,5 @@ def orchestrate(
         "final_verdict": final_verdict,
         "aborted_reason": None,
         "usage": budget.usage() if budget else None,
+        "build_id": bid,
     }

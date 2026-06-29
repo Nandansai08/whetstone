@@ -35,6 +35,9 @@ htmlcov/
 # SQLite databases
 *.db
 
+# Whetstone build checkpoints
+.whetstone_checkpoints/
+
 # OS
 .DS_Store
 Thumbs.db

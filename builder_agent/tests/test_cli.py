@@ -11,7 +11,7 @@ from builder_agent.cli import (
     main,
 )
 from builder_agent.memory import Memory
-from builder_agent.schemas import Plan, Spec, SubTask, Verdict
+from builder_agent.schemas import Attempt, Plan, Spec, SubTask, Verdict
 
 
 def _make_success_result():
@@ -518,3 +518,77 @@ def test_repl_export_and_history(
     assert os.path.exists(tmp_path / "subdir" / "custom.py")
     with open(tmp_path / "subdir" / "custom.py") as f:
         assert f.read() == "def add(a,b): return a+b"
+
+
+@patch("builder_agent.cli.input")
+@patch("builder_agent.cli.orchestrate")
+@patch("builder_agent.cli.detect_ambiguity")
+def test_repl_trace(mock_detect, mock_orchestrate, mock_input, capsys):
+    mock_detect.return_value = []
+    result = _make_success_result()
+    result["subtask_results"] = {
+        "t1": {
+            "succeeded": True,
+            "attempt": None,
+            "attempts": [
+                Attempt(
+                    iteration=0,
+                    code="def add(a,b): return a-b",
+                    verdict=Verdict(
+                        passed=False, score=3, tests_passed=True,
+                        issues=["wrong operator"], exec_output="x",
+                    ),
+                ),
+                Attempt(
+                    iteration=1,
+                    code="def add(a,b): return a+b",
+                    verdict=Verdict(
+                        passed=True, score=9, tests_passed=True,
+                        issues=[], exec_output="ok",
+                    ),
+                ),
+            ],
+            "iterations": 2,
+            "escalated": False,
+            "aborted_reason": None,
+        }
+    }
+    mock_orchestrate.return_value = result
+    mock_input.side_effect = [
+        "/trace",
+        "build request",
+        "/trace 1",
+        "/trace 1 t1",
+        "/trace 1 missing",
+        "/trace 2 t1",
+        "/trace abc",
+        "/quit",
+    ]
+
+    from builder_agent.cli import _repl
+    _repl()
+
+    captured = capsys.readouterr().out
+
+    # 1. /trace before any build
+    assert "No builds have been performed in this session yet." in captured
+
+    # 2. /trace 1 — lists subtasks with a recorded trace
+    assert "Subtasks" in captured
+    assert "1 iteration(s) recorded" not in captured  # t1 has 2, not 1
+    assert "2 iteration(s) recorded" in captured
+
+    # 3. /trace 1 t1 — full iteration trace
+    assert "Iteration 1" in captured and "Iteration 2" in captured
+    assert "wrong operator" in captured
+    assert "def add(a,b): return a-b" in captured
+    assert "def add(a,b): return a+b" in captured
+
+    # 4. /trace 1 missing — unknown subtask
+    assert "Unknown subtask 'missing' in build #1." in captured
+
+    # 5. /trace 2 t1 — out of range build number
+    assert "Invalid build number. Range: 1 to 1." in captured
+
+    # 6. /trace abc — invalid build number
+    assert "Invalid build number. Please specify an integer." in captured

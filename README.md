@@ -173,6 +173,9 @@ whetstone
 | **Smart planning** | Simple tasks → 1 subtask. Complex tasks → dependency-ordered plan |
 | **Interactive CLI** | Spinners, score bars, line-numbered code, timing per stage |
 | **One-shot mode** | `whetstone build "..." --json` for scripting and CI |
+| **Resumable builds** | `--resume` picks up a failed/interrupted multi-subtask build without redoing passed subtasks |
+| **Retry with backoff** | Transient provider errors (rate limits, dropped connections) retry automatically |
+| **Agent loop trace** | `/trace <build#> <subtask_id>` replays every iteration — code, score, issues — for one subtask |
 
 ## Configuration
 
@@ -245,10 +248,14 @@ whetstone          # launches REPL
 | Command | Description |
 |---------|-------------|
 | `<any text>` | Build something |
+| `/clarify [on\|off]` | Toggle interactive clarification |
 | `/config` | Show model configuration |
 | `/memory` | List stored memory records |
 | `/memory show <id>` | Show a specific record |
 | `/memory clear` | Clear all records |
+| `/export [filename]` | Save the last build's artifact to a file |
+| `/history [n]` | Show build history, or detail for build #n |
+| `/trace <n> [subtask_id]` | Show the agent loop trace for a subtask |
 | `/help` | Show available commands |
 | `/quit` | Exit |
 
@@ -261,6 +268,7 @@ whetstone build "Build add(a,b)" --json              # structured output
 whetstone build "Build a REST client" --max-iterations 6
 whetstone build "Build a sort" --token-budget 50000
 whetstone build "Build a cache" --no-memory           # skip memory read/write
+whetstone build "Build a REST client" --resume        # resume a failed/interrupted build
 ```
 
 ### Memory management

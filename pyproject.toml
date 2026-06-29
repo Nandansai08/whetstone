@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whetstone"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-powered code builder — describe what you want, get working code."
 readme = "README.md"
 license = "MIT"

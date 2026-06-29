@@ -3,6 +3,9 @@ import json
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+from builder_agent import config
 from builder_agent.config import ModelConfig
 from builder_agent.llm import (
     _ask_anthropic,
@@ -334,3 +337,52 @@ def test_ask_stream_fallback_to_ask():
     assert result == ["non-stream response"]
     assert len(calls) == 1
     assert calls[0][1].model_id == "my-model-v1"
+
+
+@patch("builder_agent.llm.time.sleep")
+def test_ask_retries_transient_failure_then_succeeds(mock_sleep):
+    calls = []
+
+    def flaky_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(1)
+        if len(calls) < 3:
+            raise ConnectionError("transient")
+        return "recovered"
+
+    register_provider("flaky_llm", flaky_provider)
+    m = ModelConfig("flaky_llm", "v1")
+    result = ask("test", model=m)
+    assert result == "recovered"
+    assert len(calls) == 3
+    assert mock_sleep.call_count == 2
+
+
+@patch("builder_agent.llm.time.sleep")
+def test_ask_gives_up_after_max_retries(mock_sleep):
+    calls = []
+
+    def always_fails(prompt, *, model, system="", max_tokens=4096):
+        calls.append(1)
+        raise ConnectionError("down")
+
+    register_provider("dead_llm", always_fails)
+    m = ModelConfig("dead_llm", "v1")
+    with pytest.raises(ConnectionError):
+        ask("test", model=m)
+    assert len(calls) == config.MAX_RETRIES + 1
+
+
+@patch("builder_agent.llm.time.sleep")
+def test_ask_does_not_retry_config_errors(mock_sleep):
+    calls = []
+
+    def bad_key_provider(prompt, *, model, system="", max_tokens=4096):
+        calls.append(1)
+        raise RuntimeError("no api key")
+
+    register_provider("bad_key_llm", bad_key_provider)
+    m = ModelConfig("bad_key_llm", "v1")
+    with pytest.raises(RuntimeError):
+        ask("test", model=m)
+    assert len(calls) == 1
+    mock_sleep.assert_not_called()
