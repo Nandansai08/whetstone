@@ -262,6 +262,15 @@ class ProgressRenderer:
         elif event == "budget_exceeded":
             s.stop(f"{yellow('⚠')}  Token budget exceeded")
 
+        elif event == "retry":
+            attempt = data["attempt"]
+            delay = data["delay"]
+            error = data["error"]
+            msg = f"API failed ({error}). Retrying in {delay}s (attempt {attempt})"
+            if s._running:
+                s.update(msg)
+            else:
+                print(f"  {yellow('⚠')} {msg}...")
         elif event == "cost_exceeded":
             s.stop(f"{yellow('⚠')}  Cost limit exceeded")
 

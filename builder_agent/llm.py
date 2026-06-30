@@ -15,10 +15,22 @@ for _name in ("httpx", "httpcore", "openai", "anthropic"):
     _lg.setLevel(logging.WARNING)
     _lg.propagate = False
 
+logger = logging.getLogger(__name__)
+
 _providers: dict[str, Callable] = {}
 _stream_providers: dict[str, Callable] = {}
 _embed_providers: dict[str, Callable] = {}
 _budget = None
+_progress_callback = None
+
+
+def set_progress_callback(callback) -> None:
+    global _progress_callback
+    _progress_callback = callback
+
+
+def get_progress_callback():
+    return _progress_callback
 
 
 def set_budget(budget) -> None:
@@ -96,6 +108,118 @@ def extract_json(text: str) -> str:
     return text
 
 
+def _is_transient_error(exc: Exception) -> bool:
+    if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+        return False
+    if isinstance(exc, ConnectionError):
+        return True
+
+    # OpenAI exceptions
+    try:
+        import openai
+        if isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError)):
+            return True
+        if isinstance(exc, openai.APIStatusError):
+            if exc.status_code in (429, 500, 501, 502, 503, 504):
+                return True
+            return False
+    except ImportError:
+        pass
+
+    # Anthropic exceptions
+    try:
+        import anthropic
+        if isinstance(exc, (anthropic.APIConnectionError, anthropic.APITimeoutError)):
+            return True
+        if isinstance(exc, anthropic.APIStatusError):
+            if exc.status_code in (429, 500, 501, 502, 503, 504):
+                return True
+            return False
+    except ImportError:
+        pass
+
+    # Generic httpx exceptions
+    try:
+        import httpx
+        if isinstance(
+            exc, (httpx.TimeoutException, httpx.ConnectError, httpx.ReadTimeout)
+        ):
+            return True
+        if isinstance(exc, httpx.HTTPStatusError):
+            if exc.response.status_code in (429, 500, 501, 502, 503, 504):
+                return True
+    except ImportError:
+        pass
+
+    return False
+
+
+def _execute_with_retry(fn: Callable, *args, **kwargs):
+    max_retries = getattr(config, "MAX_RETRIES", 3)
+    base_delay = getattr(config, "RETRY_DELAY", 1.0)
+
+    for attempt in range(max_retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:
+            if attempt < max_retries and _is_transient_error(exc):
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "LLM call failed with transient error: %s. "
+                    "Retrying in %.1fs (attempt %d/%d)...",
+                    exc, delay, attempt + 1, max_retries
+                )
+                cb = get_progress_callback()
+                if cb is not None:
+                    cb("retry", {
+                        "attempt": attempt + 1,
+                        "delay": delay,
+                        "error": str(exc),
+                    })
+                time.sleep(delay)
+            else:
+                raise
+
+
+def _execute_stream_with_retry(
+    fn: Callable, *args, **kwargs
+) -> Generator[str, None, None]:
+    max_retries = getattr(config, "MAX_RETRIES", 3)
+    base_delay = getattr(config, "RETRY_DELAY", 1.0)
+
+    for attempt in range(max_retries + 1):
+        try:
+            gen = fn(*args, **kwargs)
+            iterator = iter(gen)
+            first_chunk = next(iterator)
+            break
+        except StopIteration:
+            return
+        except Exception as exc:
+            if attempt < max_retries and _is_transient_error(exc):
+                delay = base_delay * (2 ** attempt)
+                logger.warning(
+                    "LLM stream call failed with transient error: %s. "
+                    "Retrying in %.1fs (attempt %d/%d)...",
+                    exc, delay, attempt + 1, max_retries
+                )
+                cb = get_progress_callback()
+                if cb is not None:
+                    cb("retry", {
+                        "attempt": attempt + 1,
+                        "delay": delay,
+                        "error": str(exc),
+                    })
+                time.sleep(delay)
+            else:
+                raise
+    else:
+        return
+
+    yield first_chunk
+    yield from iterator
+
+
 def register_provider(name: str, fn: Callable) -> None:
     _providers[name] = fn
 
@@ -109,25 +233,6 @@ def register_embed_provider(name: str, fn: Callable) -> None:
     _embed_providers[name] = fn
 
 
-def _with_retry(fn: Callable, *args, **kwargs):
-    """Retry transient provider failures with exponential backoff.
-
-    RuntimeError/ValueError are config errors (bad key, unknown provider) —
-    retrying them just fails the same way, so they pass through immediately.
-    """
-    last_exc: Exception | None = None
-    for attempt in range(config.MAX_RETRIES + 1):
-        try:
-            return fn(*args, **kwargs)
-        except (RuntimeError, ValueError):
-            raise
-        except Exception as e:
-            last_exc = e
-            if attempt < config.MAX_RETRIES:
-                time.sleep(config.RETRY_DELAY * (2 ** attempt))
-    raise last_exc
-
-
 def embed(
     text: str,
     *,
@@ -136,7 +241,7 @@ def embed(
     fn = _embed_providers.get(model.provider)
     if fn is None:
         fn = _default_embed_provider(model.provider)
-    return _with_retry(fn, text, model=model)
+    return _execute_with_retry(fn, text, model=model)
 
 
 def ask(
@@ -149,7 +254,7 @@ def ask(
     fn = _providers.get(model.provider)
     if fn is None:
         fn = _default_provider(model.provider)
-    return _with_retry(
+    return _execute_with_retry(
         fn, prompt, model=model, system=system, max_tokens=max_tokens
     )
 
@@ -169,7 +274,9 @@ def ask_stream(
             # Fallback to ask() and yield the entire response as a single chunk
             yield ask(prompt, model=model, system=system, max_tokens=max_tokens)
             return
-    yield from fn(prompt, model=model, system=system, max_tokens=max_tokens)
+    yield from _execute_stream_with_retry(
+        fn, prompt, model=model, system=system, max_tokens=max_tokens
+    )
 
 
 def _default_provider(name: str) -> Callable:
