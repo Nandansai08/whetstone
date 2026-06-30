@@ -102,10 +102,10 @@ def get_embedder(name: str = "sentence_transformer") -> Embedder:
     if name == "tfidf":
         return TfidfEmbedder()
     if name == "llm":
-        from builder_agent import config
         model = ModelConfig(
             "openai", "nomic-embed-text",
-            base_url=getattr(config, "_OLLAMA", "http://localhost:11434/v1"),
+            base_url="http://localhost:11434/v1",
         )
         return LLMEmbedder(model)
     raise ValueError(f"Unknown embedder: {name}")
+
