@@ -49,3 +49,7 @@ def test_get_embedder_unknown_raises():
         assert False, "Should have raised"
     except ValueError as e:
         assert "nonexistent" in str(e)
+
+def test_get_embedder_llm_default_base_url():
+    emb = get_embedder("llm")
+    assert emb._model.base_url == "http://localhost:11434/v1"
