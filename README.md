@@ -163,7 +163,7 @@ whetstone
 
 | Feature | Description |
 |---------|-------------|
-| **Provider-agnostic** | OpenRouter, OpenAI, Anthropic, Voyage, Ollama, or any OpenAI-compatible API |
+| **Provider-agnostic** | OpenRouter, OpenAI, Anthropic, Ollama, or any OpenAI-compatible API |
 | **Cross-model verification** | Worker ≠ judge — independent blind spots catch more bugs |
 | **Test-first** | Generates executable tests from acceptance criteria before verifying |
 | **Self-critique** | Worker reviews its own code before the judge sees it |
@@ -184,7 +184,7 @@ Instead of editing `builder_agent/config.py` directly, you can configure Whetsto
 ### Optional Provider Dependencies
 For certain model and embedding providers, you must install optional dependency extras:
 - **Anthropic**: `pip install -e ".[anthropic]"`
-- **Voyage AI**: `pip install -e ".[voyage]"`
+- **Voyage AI (embeddings)**: `pip install -e ".[voyage]"`
 - **Local Embeddings (sentence-transformers)**: `pip install -e ".[embeddings]"`
 
 To install Whetstone with all optional dependencies and development tools at once, use:
