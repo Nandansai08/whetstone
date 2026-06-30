@@ -11,6 +11,7 @@ from builder_agent.config import ModelConfig
 @pytest.fixture(autouse=True)
 def restore_config_defaults():
     # Store standard defaults
+    original_pricing = dict(config.MODEL_PRICING)
     defaults = {
         "MAX_ITERATIONS": 4,
         "SCORE_THRESHOLD": 8,
@@ -61,6 +62,7 @@ def restore_config_defaults():
     # Restore defaults
     for k, v in defaults.items():
         setattr(config, k, v)
+    config.MODEL_PRICING = original_pricing
 
 
 def test_default_behavior_no_config(tmp_path):
@@ -211,3 +213,42 @@ def test_thresholds_are_positive():
 
 def test_score_threshold_in_range():
     assert 1 <= config.SCORE_THRESHOLD <= 10
+
+
+def test_pricing_configuration_loading(tmp_path):
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+
+    toml = """
+[pricing."meta-llama/llama-4-scout"]
+input = 0.20
+output = 0.80
+
+[pricing."new-custom-model"]
+input = 0.05
+
+[pricing."malformed-model"]
+input = "abc"
+output = 0.12
+"""
+    with open(project_dir / ".whetstone.toml", "w") as f:
+        f.write(toml)
+
+    with patch("pathlib.Path.home", return_value=tmp_path / "home"), \
+         patch("pathlib.Path.cwd", return_value=project_dir):
+
+         importlib.reload(config)
+
+         # 1. & 2. Override existing model price
+         assert config.MODEL_PRICING["meta-llama/llama-4-scout"]["input"] == 0.20
+         assert config.MODEL_PRICING["meta-llama/llama-4-scout"]["output"] == 0.80
+
+         # 3. Add brand-new model
+         assert "new-custom-model" in config.MODEL_PRICING
+         # 4. Graceful handling of missing output (default 0.0 for new)
+         assert config.MODEL_PRICING["new-custom-model"]["input"] == 0.05
+         assert config.MODEL_PRICING["new-custom-model"]["output"] == 0.0
+
+         # 4. Malformed input (keeps default 0.0, output overrides)
+         assert config.MODEL_PRICING["malformed-model"]["input"] == 0.0
+         assert config.MODEL_PRICING["malformed-model"]["output"] == 0.12

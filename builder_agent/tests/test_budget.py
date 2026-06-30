@@ -40,4 +40,29 @@ def test_budget_usage_dict():
         "output_tokens": 200,
         "total_tokens": 300,
         "limit": 500,
+        "cost": None,
+        "max_cost": 0.0,
     }
+
+
+def test_budget_cost_accumulation():
+    b = TokenBudget(limit=0, max_cost=0.10)
+    b.record(100000, 50000, cost=0.045)
+    assert b.cost == 0.045
+    assert not b.exceeded()
+
+    b.record(200000, 100000, cost=0.09)
+    assert b.cost == 0.135
+    assert b.exceeded()
+    assert b.exceeded_reason() == "max_cost"
+
+
+def test_budget_cost_unknown_fallback():
+    b = TokenBudget(limit=0, max_cost=0.05)
+    b.record(100, 200, cost=0.01)
+    assert b.cost == 0.01
+
+    b.record(100, 200, cost=None)
+    assert b.cost is None
+    assert not b.exceeded()
+    assert b.exceeded_reason() is None

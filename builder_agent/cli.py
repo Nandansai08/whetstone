@@ -262,6 +262,9 @@ class ProgressRenderer:
         elif event == "budget_exceeded":
             s.stop(f"{yellow('⚠')}  Token budget exceeded")
 
+        elif event == "cost_exceeded":
+            s.stop(f"{yellow('⚠')}  Cost limit exceeded")
+
         elif event == "subtask_done":
             pass
 
@@ -363,6 +366,16 @@ def _print_result(result: dict, output_path: str = "", output_dir: str = "") -> 
         lim = f"{u['limit']:,}"
         print(f"    Tokens {dim(f'{tok} / {lim}')}")
 
+        cost = u.get("cost")
+        max_cost = u.get("max_cost", 0.0)
+        if cost is None:
+            print(f"    Cost   {dim('Unknown')}")
+        else:
+            if max_cost > 0.0:
+                print(f"    Cost   {dim(f'${cost:.4f} / ${max_cost:.4f}')}")
+            else:
+                print(f"    Cost   {dim(f'${cost:.4f}')}")
+
     artifact = result.get("artifact")
     if artifact:
         if isinstance(artifact, dict):
@@ -445,6 +458,14 @@ def _print_config():
     print(f"  {bold('Settings')}")
     for label, val in settings:
         print(f"    {label:<12s} {val}")
+    print()
+
+    print(f"  {bold('Pricing')}")
+    from builder_agent.config import MODEL_PRICING
+    for model_id, pricing in MODEL_PRICING.items():
+        inp = pricing.get("input", 0.0)
+        out = pricing.get("output", 0.0)
+        print(f"    {model_id:<40s} Input: ${inp:.4f}/1M  Output: ${out:.4f}/1M")
     print()
 
 
@@ -875,8 +896,9 @@ def _cmd_build(args) -> int:
 
     budget = None
     token_limit = args.token_budget or config.TOKEN_BUDGET
-    if token_limit > 0:
-        budget = TokenBudget(limit=token_limit)
+    max_cost_limit = args.max_cost
+    if token_limit > 0 or max_cost_limit > 0.0:
+        budget = TokenBudget(limit=token_limit, max_cost=max_cost_limit)
         set_budget(budget)
 
     memory = None
@@ -1003,6 +1025,14 @@ image = "python:3.11-slim"
 memory_limit = "256m"
 cpu_limit = 1.0
 network_access = false
+
+[pricing."meta-llama/llama-4-scout"]
+input = 0.15
+output = 0.60
+
+[pricing."google/gemini-2.5-flash-preview"]
+input = 0.075
+output = 0.30
 """
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -1051,6 +1081,10 @@ def main(argv: list[str] | None = None) -> int:
     build_p.add_argument(
         "--token-budget", type=int, default=0,
         help="Token budget (0 = use config default)",
+    )
+    build_p.add_argument(
+        "--max-cost", type=float, default=0.0,
+        help="Max cost limit in USD (0.0 = no limit)",
     )
     build_p.add_argument(
         "--no-memory", action="store_true",

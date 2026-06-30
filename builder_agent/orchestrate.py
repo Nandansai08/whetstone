@@ -152,9 +152,11 @@ def orchestrate_subtask(
 
     for i in range(config.MAX_ITERATIONS):
         if budget and budget.exceeded():
-            aborted_reason = "token_budget"
-            on_progress("budget_exceeded", {"subtask": subtask.id})
-            logger.info("[%s] token budget exceeded, aborting", subtask.id)
+            reason = budget.exceeded_reason() or "token_budget"
+            aborted_reason = reason
+            event = "budget_exceeded" if reason == "token_budget" else "cost_exceeded"
+            on_progress(event, {"subtask": subtask.id})
+            logger.info("[%s] %s exceeded, aborting", subtask.id, reason)
             break
 
         if (
@@ -343,18 +345,24 @@ async def _async_orchestrate(
             subtask = subtask_by_id[st_id]
 
             if budget and budget.exceeded():
+                reason = budget.exceeded_reason() or "token_budget"
                 if not any_failed:
                     any_failed = True
                     first_failure_id = st_id
-                    first_failure_reason = "token_budget"
+                    first_failure_reason = reason
                 subtask_results[st_id] = {
                     "succeeded": False,
                     "attempt": None,
                     "iterations": 0,
                     "escalated": False,
-                    "aborted_reason": "token_budget",
+                    "aborted_reason": reason,
                 }
-                on_progress("budget_exceeded", {"subtask": st_id})
+                event = (
+                    "budget_exceeded"
+                    if reason == "token_budget"
+                    else "cost_exceeded"
+                )
+                on_progress(event, {"subtask": st_id})
                 continue
 
             idx = subtask_indices[st_id]

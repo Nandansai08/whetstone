@@ -296,12 +296,11 @@ def test_orchestrate_runs_all_subtasks_integrates_verifies(
     mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
     mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
-    verify_responses = []
-    # 3 subtasks * (make_tests + judge) + final verify (make_tests + judge)
-    for _ in range(4):
-        verify_responses.append("assert True")
-        verify_responses.append(json.dumps({"score": 9, "issues": []}))
-    mock_verify_ask.side_effect = iter(verify_responses)
+    def _verify_ask_mock(prompt, *, model, system="", max_tokens=4096):
+        if "score" in (system or "").lower() or "judge" in (system or "").lower():
+            return json.dumps({"score": 9, "issues": []})
+        return "assert True"
+    mock_verify_ask.side_effect = _verify_ask_mock
 
     from builder_agent.orchestrate import orchestrate
     result = orchestrate("build calculator", interactive=False)
@@ -351,11 +350,11 @@ def test_orchestrate_stores_subtask_and_plan_records(
     mock_plan_ask, mock_clarify_ask, mock_run, mock_gen_ask_stream,
 ):
     mock_gen_ask_stream.side_effect = _ask_stream_mock_wrapper(mock_gen_ask)
-    verify_responses = []
-    for _ in range(4):
-        verify_responses.append("assert True")
-        verify_responses.append(json.dumps({"score": 9, "issues": []}))
-    mock_verify_ask.side_effect = iter(verify_responses)
+    def _verify_ask_mock(prompt, *, model, system="", max_tokens=4096):
+        if "score" in (system or "").lower() or "judge" in (system or "").lower():
+            return json.dumps({"score": 9, "issues": []})
+        return "assert True"
+    mock_verify_ask.side_effect = _verify_ask_mock
 
     mem = _tmp_memory()
     from builder_agent.orchestrate import orchestrate

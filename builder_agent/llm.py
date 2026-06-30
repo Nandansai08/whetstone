@@ -30,9 +30,20 @@ def get_budget():
     return _budget
 
 
-def _record_usage(input_tokens: int, output_tokens: int) -> None:
+def _record_usage(
+    input_tokens: int, output_tokens: int, model: ModelConfig | None = None
+) -> None:
     if _budget is not None:
-        _budget.record(input_tokens, output_tokens)
+        cost = None
+        if model is not None:
+            from builder_agent.config import MODEL_PRICING
+            pricing = MODEL_PRICING.get(model.model_id)
+            if pricing is not None:
+                cost = (
+                    (input_tokens / 1_000_000.0) * pricing["input"]
+                    + (output_tokens / 1_000_000.0) * pricing["output"]
+                )
+        _budget.record(input_tokens, output_tokens, cost=cost)
 
 
 def strip_fences(text: str) -> str:
@@ -209,6 +220,7 @@ def _ask_anthropic(
         _record_usage(
             response.usage.input_tokens,
             response.usage.output_tokens,
+            model=model,
         )
     return response.content[0].text or ""
 
@@ -251,6 +263,7 @@ def _ask_openai(
         _record_usage(
             response.usage.prompt_tokens or 0,
             response.usage.completion_tokens or 0,
+            model=model,
         )
     return response.choices[0].message.content or ""
 
@@ -306,6 +319,7 @@ def _ask_stream_anthropic(
             _record_usage(
                 message.usage.input_tokens,
                 message.usage.output_tokens,
+                model=model,
             )
 
 
@@ -360,6 +374,7 @@ def _ask_stream_openai(
             _record_usage(
                 chunk.usage.prompt_tokens or 0,
                 chunk.usage.completion_tokens or 0,
+                model=model,
             )
         if chunk.choices:
             delta = chunk.choices[0].delta.content

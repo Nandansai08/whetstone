@@ -592,3 +592,96 @@ def test_repl_trace(mock_detect, mock_orchestrate, mock_input, capsys):
 
     # 6. /trace abc — invalid build number
     assert "Invalid build number. Please specify an integer." in captured
+
+
+@patch("builder_agent.cli.orchestrate")
+def test_cli_build_max_cost_passes_to_budget(mock_orch):
+    mock_orch.return_value = {
+        "succeeded": True,
+        "halted_at": None,
+        "plan": None,
+        "spec": None,
+        "subtask_results": {},
+        "artifact": "def add(a,b): return a+b",
+        "final_verdict": None,
+        "aborted_reason": None,
+        "usage": {
+            "input_tokens": 100,
+            "output_tokens": 200,
+            "total_tokens": 300,
+            "limit": 500,
+            "cost": 0.015,
+            "max_cost": 0.05,
+        },
+    }
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        code = main([
+            "build", "add function", "--non-interactive",
+            "--no-memory", "--output", os.path.join(tmpdir, "out.py"),
+            "--max-cost", "0.05",
+        ])
+        assert code == 0
+
+    mock_orch.assert_called_once()
+    called_budget = mock_orch.call_args[1].get("budget")
+    assert called_budget is not None
+    assert called_budget._max_cost == 0.05
+
+
+@patch("builder_agent.cli.orchestrate")
+def test_cli_build_max_cost_aborted(mock_orch):
+    mock_orch.return_value = {
+        "succeeded": False,
+        "halted_at": "t1",
+        "plan": None,
+        "spec": None,
+        "subtask_results": {},
+        "artifact": None,
+        "final_verdict": None,
+        "aborted_reason": "max_cost",
+        "usage": {
+            "input_tokens": 1000,
+            "output_tokens": 2000,
+            "total_tokens": 3000,
+            "limit": 500,
+            "cost": 0.06,
+            "max_cost": 0.05,
+        },
+    }
+
+    code = main([
+        "build", "add function", "--non-interactive",
+        "--no-memory", "--max-cost", "0.05",
+    ])
+    assert code == 2  # EXIT_ABORTED
+
+
+def test_print_result_displays_cost(capsys):
+    from builder_agent.cli import _print_result
+
+    res = {
+        "succeeded": True,
+        "subtask_results": {},
+        "artifact": "code",
+        "usage": {
+            "total_tokens": 300,
+            "limit": 500,
+            "cost": 0.0123,
+            "max_cost": 0.0500,
+        },
+    }
+    _print_result(res)
+    out = capsys.readouterr().out
+    assert "Cost" in out
+    assert "$0.0123 / $0.0500" in out
+
+
+def test_print_config_displays_pricing(capsys):
+    from builder_agent.cli import _print_config
+
+    _print_config()
+    out = capsys.readouterr().out
+    assert "Pricing" in out
+    assert "meta-llama/llama-4-scout" in out
+    assert "google/gemini-2.5-flash-preview" in out

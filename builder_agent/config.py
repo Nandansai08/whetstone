@@ -9,6 +9,13 @@ class ModelConfig:
     base_url: str = ""  # custom endpoint (Ollama, vLLM, Azure, etc.)
 
 
+# Price in USD per 1,000,000 tokens
+MODEL_PRICING = {
+    "meta-llama/llama-4-scout": {"input": 0.15, "output": 0.60},
+    "google/gemini-2.5-flash-preview": {"input": 0.075, "output": 0.30},
+}
+
+
 _OPENROUTER = "https://openrouter.ai/api/v1"
 _OR_KEY = "OPENROUTER_API_KEY"
 
@@ -62,6 +69,7 @@ def _load_and_apply_config() -> None:
     global EMBEDDER, MAX_SUBTASKS, MAX_RETRIES, RETRY_DELAY
     global SANDBOX_BACKEND, SANDBOX_ENGINE, SANDBOX_IMAGE
     global SANDBOX_MEMORY_LIMIT, SANDBOX_CPU_LIMIT, SANDBOX_NETWORK_ACCESS
+    global MODEL_PRICING
 
     user_config_path = pathlib.Path.home() / ".config" / "whetstone" / "config.toml"
     project_config_path = pathlib.Path.cwd() / ".whetstone.toml"
@@ -149,6 +157,29 @@ def _load_and_apply_config() -> None:
                         api_key_env=m_conf.get("api_key_env", existing.api_key_env),
                         base_url=m_conf.get("base_url", existing.base_url),
                     )
+
+        if "pricing" in data and isinstance(data["pricing"], dict):
+            pricing = data["pricing"]
+            for model_id, prices in pricing.items():
+                if isinstance(prices, dict):
+                    existing_price = MODEL_PRICING.get(
+                        model_id, {"input": 0.0, "output": 0.0}
+                    )
+                    input_val = existing_price.get("input", 0.0)
+                    output_val = existing_price.get("output", 0.0)
+
+                    if "input" in prices:
+                        try:
+                            input_val = float(prices["input"])
+                        except (ValueError, TypeError):
+                            pass
+                    if "output" in prices:
+                        try:
+                            output_val = float(prices["output"])
+                        except (ValueError, TypeError):
+                            pass
+
+                    MODEL_PRICING[model_id] = {"input": input_val, "output": output_val}
 
 
 _load_and_apply_config()
