@@ -181,6 +181,17 @@ whetstone
 
 Instead of editing `builder_agent/config.py` directly, you can configure Whetstone using TOML configuration files.
 
+### Optional Provider Dependencies
+For certain model and embedding providers, you must install optional dependency extras:
+- **Anthropic**: `pip install -e ".[anthropic]"`
+- **Voyage AI (embeddings)**: `pip install -e ".[voyage]"`
+- **Local Embeddings (sentence-transformers)**: `pip install -e ".[embeddings]"`
+
+To install Whetstone with all optional dependencies and development tools at once, use:
+```bash
+pip install -e ".[all]"
+```
+
 ### Configuration Search Order
 Whetstone loads configuration settings in the following order of precedence (highest to lowest):
 1. **CLI arguments** (e.g., `--max-iterations`, `--token-budget`).
