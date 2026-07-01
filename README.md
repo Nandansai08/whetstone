@@ -381,16 +381,7 @@ The sandbox executes model-generated code via `subprocess` with a timeout. **Thi
 
 ## Contributing
 
-See [open issues](https://github.com/Nandansai08/whetstone/issues) — issues labeled [`good first issue`](https://github.com/Nandansai08/whetstone/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are great starting points.
-
-```bash
-git clone https://github.com/Nandansai08/whetstone.git
-cd whetstone
-pip install -e ".[dev]"
-pytest                    # make sure everything passes
-# make your changes
-ruff check builder_agent/ # lint before committing
-```
+Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code style, developer setup, testing workflow, and provider/embedder extension guidelines.
 
 ## License
 
