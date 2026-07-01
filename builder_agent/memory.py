@@ -1,3 +1,5 @@
+"""SQLite-based vector search memory manager storing past build experiences."""
+
 from __future__ import annotations
 
 import json
@@ -42,11 +44,19 @@ _MIGRATE_RECORD_TYPE = (
 
 
 class Memory:
+    """Manager for Whetstone's build-history database and vector embeddings."""
+
     def __init__(
         self,
         db_path: str | None = None,
         embedder: Embedder | None = None,
     ):
+        """Initialize the database and embedding strategy.
+
+        Args:
+            db_path: Optional file path path override to the SQLite database.
+            embedder: Optional Embedder protocol implementation override.
+        """
         self._db_path = db_path or config.MEMORY_DB_PATH
         self._embedder = embedder or get_embedder(config.EMBEDDER)
         self._init_db()
@@ -68,6 +78,11 @@ class Memory:
             conn.execute(_MIGRATE_RECORD_TYPE)
 
     def store(self, record: MemoryRecord) -> None:
+        """Save a build experience record into the memory database.
+
+        Args:
+            record: Dataclass representation of the build task metadata.
+        """
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO memory "
@@ -94,6 +109,16 @@ class Memory:
         k: int | None = None,
         record_type: str | None = None,
     ) -> list[MemoryRecord]:
+        """Search similar past builds matching the semantic query string.
+
+        Args:
+            query: Semantic search query string.
+            k: Maximum number of records to return.
+            record_type: Filter by task execution type ("subtask" or "plan").
+
+        Returns:
+            A list of matching past MemoryRecords, sorted by similarity descending.
+        """
         k = k or config.MEMORY_TOP_K
         query_vec = self._embedder.embed(query)
 
@@ -136,6 +161,14 @@ class Memory:
     def list_records(
         self, record_type: str | None = None,
     ) -> list[dict]:
+        """List summary info for all records stored in the memory database.
+
+        Args:
+            record_type: Filter by record type block.
+
+        Returns:
+            A list of dictionary records containing primary metadata key values.
+        """
         with self._connect() as conn:
             if record_type:
                 rows = conn.execute(
@@ -158,6 +191,14 @@ class Memory:
         ]
 
     def get_record(self, record_id: int) -> dict | None:
+        """Fetch a specific memory record by its primary ID.
+
+        Args:
+            record_id: Database key ID.
+
+        Returns:
+            The memory record dictionary, or None if not found.
+        """
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT id, request, output_type, subtask_desc, failures, "
@@ -180,6 +221,11 @@ class Memory:
         }
 
     def clear(self) -> int:
+        """Wipe all stored records from the memory table.
+
+        Returns:
+            The count of deleted memory records.
+        """
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM memory")
             return cursor.rowcount

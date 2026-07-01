@@ -1,3 +1,5 @@
+"""Build orchestration state machine coordination module."""
+
 from __future__ import annotations
 
 import asyncio
@@ -133,6 +135,18 @@ def orchestrate_subtask(
     budget: TokenBudget | None = None,
     on_progress: ProgressCallback = _noop_progress,
 ) -> dict:
+    """Execute the loop process (generation, critique, verify) for a single subtask.
+
+    Args:
+        subtask: Subtask definition profile.
+        spec: Global specifications structure.
+        memory: Vector memory manager db.
+        budget: Token budget tracker.
+        on_progress: State transition progress handler.
+
+    Returns:
+        A dict containing status outcomes, outputs, and score history metrics.
+    """
     best: Attempt | None = None
     feedback: str | None = None
     attempts: list[Attempt] = []
@@ -461,6 +475,19 @@ def orchestrate(
     on_progress: ProgressCallback = _noop_progress,
     resume: bool = False,
 ) -> dict:
+    """Execute the complete build pipeline (clarify, plan, orchestrate, integrate).
+
+    Args:
+        request: Raw user build prompt instruction.
+        memory: Vector memory database.
+        interactive: Toggle user feedback clarification loops.
+        budget: Token budget tracker.
+        on_progress: Stage transition coordinator callback.
+        resume: True to resume a previous build checkpoint.
+
+    Returns:
+        dict: A dictionary containing final build output code and build execution logs.
+    """
     from builder_agent.llm import set_progress_callback
     set_progress_callback(on_progress)
     try:

@@ -1,3 +1,5 @@
+"""Code integration and AST merging module."""
+
 from __future__ import annotations
 
 import ast
@@ -61,7 +63,17 @@ def _extract_public_names(code: str) -> list[str]:
 
 
 def integrate(spec: Spec, outputs: dict[str, str], plan: Plan) -> str | dict[str, str]:
-    """Integrate outputs into a single module or a directory file tree (package)."""
+    """Integrate outputs into a single module or a directory file tree (package).
+
+    Args:
+        spec: The global specification structure.
+        outputs: A mapping of subtask IDs to their generated code strings.
+        plan: The topologically sorted execution plan.
+
+    Returns:
+        str | dict[str, str]: The combined single module code, or a mapping of file
+            paths to their contents for a package structure.
+    """
     if spec.output_type == "python_package":
         code_outputs = ""
         for subtask in plan.subtasks:

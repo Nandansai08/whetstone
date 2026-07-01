@@ -1,8 +1,19 @@
+"""Global configuration settings and LLM model profiles."""
+
 from dataclasses import dataclass
 
 
 @dataclass
 class ModelConfig:
+    """Configuration for an LLM provider and model.
+
+    Attributes:
+        provider: Name of the LLM provider (e.g., "anthropic", "openai").
+        model_id: The identifier string for the specific model.
+        api_key_env: Optional environment variable name holding the API key.
+        base_url: Optional custom target URL endpoint for API requests.
+    """
+
     provider: str  # "anthropic" | "openai" | any registered provider
     model_id: str
     api_key_env: str = ""  # env var name; empty = provider default

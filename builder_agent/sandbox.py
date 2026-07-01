@@ -1,3 +1,5 @@
+"""Sandboxed code execution environments using subprocesses or containers."""
+
 from __future__ import annotations
 
 import shutil

@@ -1,3 +1,5 @@
+"""Code verification and evaluation dispatcher module."""
+
 from __future__ import annotations
 
 import json
@@ -36,18 +38,50 @@ _JUDGE_PROMPT = (
 
 
 def make_tests(subtask: SubTask, code: str) -> str:
+    """Generate executable test suite code for the target subtask.
+
+    Args:
+        subtask: The subtask defining criteria constraints.
+        code: Source code block under test.
+
+    Returns:
+        The generated test suite content string.
+    """
     criteria = "\n".join(f"- {c}" for c in subtask.acceptance_criteria)
     prompt = _TEST_PROMPT.format(criteria=criteria, code=code)
     return ask(prompt, model=config.WORKER_MODEL, system=_TEST_SYSTEM)
 
 
 class Verifier(Protocol):
+    """Protocol defining the interface for target code verifiers."""
+
     def verify(self, subtask: SubTask, code: str | dict[str, str]) -> Verdict:
+        """Verify the correctness of generated code against subtask criteria.
+
+        Args:
+            subtask: Target subtask definition containing criteria metadata.
+            code: Source code to evaluate (string or a mapping of file paths
+                to content).
+
+        Returns:
+            The evaluation Verdict metadata structure.
+        """
         ...
 
 
 class GenericVerifier:
+    """Generic Python module code verifier using test execution and LLM judging."""
+
     def verify(self, subtask: SubTask, code: str) -> Verdict:
+        """Verify generic python module code correctness.
+
+        Args:
+            subtask: Target subtask description.
+            code: Python source code content.
+
+        Returns:
+            The evaluation Verdict metadata.
+        """
         test_code = strip_fences(make_tests(subtask, code))
         full_code = code + "\n\n" + test_code
         tests_passed, exec_output = run_code(
@@ -233,7 +267,18 @@ def _sql_authorizer(action, arg1, arg2, dbname, source_principal):
 
 
 class SqlVerifier:
+    """SQL schema and migration verifier using isolated SQLite memory sandboxes."""
+
     def verify(self, subtask: SubTask, code: str) -> Verdict:
+        """Verify SQL script schema and migrations.
+
+        Args:
+            subtask: Target subtask definition containing requirements.
+            code: Raw SQL statements block.
+
+        Returns:
+            The evaluation Verdict metadata.
+        """
         schema_or_error = ""
         try:
             conn = sqlite3.connect(":memory:")
@@ -288,5 +333,15 @@ _VERIFIERS: dict[str, Verifier] = {
 def verify(
     subtask: SubTask, code: str | dict[str, str], output_type: str = "python_module"
 ) -> Verdict:
+    """Dispatch code verification tasks to specific verifier instances.
+
+    Args:
+        subtask: Target subtask constraints structure.
+        code: Generated raw source code script.
+        output_type: Kind of code artifact target.
+
+    Returns:
+        The execution evaluation Verdict metadata.
+    """
     verifier = _VERIFIERS.get(output_type, _VERIFIERS["python_module"])
     return verifier.verify(subtask, code)
