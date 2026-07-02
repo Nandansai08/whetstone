@@ -373,7 +373,11 @@ def _print_result(result: dict, output_path: str = "", output_dir: str = "") -> 
         u = result["usage"]
         tok = f"{u['total_tokens']:,}"
         lim = f"{u['limit']:,}"
-        print(f"    Tokens {dim(f'{tok} / {lim}')}")
+        cached = u.get("cache_read_tokens", 0)
+        if cached > 0:
+            print(f"    Tokens {dim(f'{tok} / {lim} ({cached:,} cached)')}")
+        else:
+            print(f"    Tokens {dim(f'{tok} / {lim}')}")
 
         cost = u.get("cost")
         max_cost = u.get("max_cost", 0.0)

@@ -33,7 +33,7 @@ def test_budget_zero_limit_never_exceeded():
 
 def test_budget_usage_dict():
     b = TokenBudget(limit=500)
-    b.record(100, 200)
+    b.record(100, 200, cache_read_tokens=40, cache_creation_tokens=20)
     u = b.usage()
     assert u == {
         "input_tokens": 100,
@@ -42,7 +42,23 @@ def test_budget_usage_dict():
         "limit": 500,
         "cost": None,
         "max_cost": 0.0,
+        "cache_read_tokens": 40,
+        "cache_creation_tokens": 20,
     }
+
+
+def test_budget_caching():
+    b = TokenBudget(limit=1000)
+    assert b.cache_read_tokens == 0
+    assert b.cache_creation_tokens == 0
+
+    b.record(100, 50, cache_read_tokens=40, cache_creation_tokens=10)
+    assert b.cache_read_tokens == 40
+    assert b.cache_creation_tokens == 10
+
+    b.record(200, 100, cache_read_tokens=60, cache_creation_tokens=30)
+    assert b.cache_read_tokens == 100
+    assert b.cache_creation_tokens == 40
 
 
 def test_budget_cost_accumulation():

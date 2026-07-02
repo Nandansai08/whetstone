@@ -9,16 +9,25 @@ class TokenBudget:
         self._max_cost = max_cost
         self._input_tokens = 0
         self._output_tokens = 0
+        self._cache_read_tokens = 0
+        self._cache_creation_tokens = 0
         self._cost = 0.0
         self._cost_unknown = False
         self._lock = threading.Lock()
 
     def record(
-        self, input_tokens: int, output_tokens: int, cost: float | None = None
+        self,
+        input_tokens: int,
+        output_tokens: int,
+        cost: float | None = None,
+        cache_read_tokens: int = 0,
+        cache_creation_tokens: int = 0,
     ) -> None:
         with self._lock:
             self._input_tokens += input_tokens
             self._output_tokens += output_tokens
+            self._cache_read_tokens += cache_read_tokens
+            self._cache_creation_tokens += cache_creation_tokens
             if cost is not None:
                 if not self._cost_unknown:
                     self._cost += cost
@@ -39,6 +48,16 @@ class TokenBudget:
     def output_tokens(self) -> int:
         with self._lock:
             return self._output_tokens
+
+    @property
+    def cache_read_tokens(self) -> int:
+        with self._lock:
+            return self._cache_read_tokens
+
+    @property
+    def cache_creation_tokens(self) -> int:
+        with self._lock:
+            return self._cache_creation_tokens
 
     @property
     def cost(self) -> float | None:
@@ -82,4 +101,6 @@ class TokenBudget:
                 "limit": self._limit,
                 "cost": None if self._cost_unknown else self._cost,
                 "max_cost": self._max_cost,
+                "cache_read_tokens": self._cache_read_tokens,
+                "cache_creation_tokens": self._cache_creation_tokens,
             }

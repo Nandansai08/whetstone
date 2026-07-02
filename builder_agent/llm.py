@@ -43,7 +43,11 @@ def get_budget():
 
 
 def _record_usage(
-    input_tokens: int, output_tokens: int, model: ModelConfig | None = None
+    input_tokens: int,
+    output_tokens: int,
+    model: ModelConfig | None = None,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
 ) -> None:
     if _budget is not None:
         cost = None
@@ -55,7 +59,13 @@ def _record_usage(
                     (input_tokens / 1_000_000.0) * pricing["input"]
                     + (output_tokens / 1_000_000.0) * pricing["output"]
                 )
-        _budget.record(input_tokens, output_tokens, cost=cost)
+        _budget.record(
+            input_tokens,
+            output_tokens,
+            cost=cost,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
 
 
 def strip_fences(text: str) -> str:
@@ -321,13 +331,24 @@ def _ask_anthropic(
         "messages": [{"role": "user", "content": prompt}],
     }
     if system:
-        msg_kwargs["system"] = system
+        msg_kwargs["system"] = [
+            {
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
     response = client.messages.create(**msg_kwargs)
     if hasattr(response, "usage") and response.usage:
+        cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+        cache_create = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+        total_input = response.usage.input_tokens + cache_read + cache_create
         _record_usage(
-            response.usage.input_tokens,
+            total_input,
             response.usage.output_tokens,
             model=model,
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_create,
         )
     return response.content[0].text or ""
 
@@ -367,10 +388,18 @@ def _ask_openai(
         max_tokens=max_tokens,
     )
     if hasattr(response, "usage") and response.usage:
+        cache_read = 0
+        details = getattr(response.usage, "prompt_tokens_details", None)
+        if details is not None:
+            if isinstance(details, dict):
+                cache_read = details.get("cached_tokens", 0) or 0
+            else:
+                cache_read = getattr(details, "cached_tokens", 0) or 0
         _record_usage(
             response.usage.prompt_tokens or 0,
             response.usage.completion_tokens or 0,
             model=model,
+            cache_read_tokens=cache_read,
         )
     return response.choices[0].message.content or ""
 
@@ -416,17 +445,28 @@ def _ask_stream_anthropic(
         "messages": [{"role": "user", "content": prompt}],
     }
     if system:
-        msg_kwargs["system"] = system
+        msg_kwargs["system"] = [
+            {
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
 
     with client.messages.stream(**msg_kwargs) as stream:
         for text in stream.text_stream:
             yield text
         message = stream.get_final_message()
         if message and hasattr(message, "usage") and message.usage:
+            cache_read = getattr(message.usage, "cache_read_input_tokens", 0) or 0
+            cache_create = getattr(message.usage, "cache_creation_input_tokens", 0) or 0
+            total_input = message.usage.input_tokens + cache_read + cache_create
             _record_usage(
-                message.usage.input_tokens,
+                total_input,
                 message.usage.output_tokens,
                 model=model,
+                cache_read_tokens=cache_read,
+                cache_creation_tokens=cache_create,
             )
 
 
@@ -478,10 +518,18 @@ def _ask_stream_openai(
 
     for chunk in response:
         if hasattr(chunk, "usage") and chunk.usage:
+            cache_read = 0
+            details = getattr(chunk.usage, "prompt_tokens_details", None)
+            if details is not None:
+                if isinstance(details, dict):
+                    cache_read = details.get("cached_tokens", 0) or 0
+                else:
+                    cache_read = getattr(details, "cached_tokens", 0) or 0
             _record_usage(
                 chunk.usage.prompt_tokens or 0,
                 chunk.usage.completion_tokens or 0,
                 model=model,
+                cache_read_tokens=cache_read,
             )
         if chunk.choices:
             delta = chunk.choices[0].delta.content
