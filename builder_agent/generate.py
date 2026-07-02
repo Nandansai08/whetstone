@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 
 from builder_agent import config
 from builder_agent.config import ModelConfig
@@ -54,6 +54,7 @@ def generate(
     memory_hints: list[MemoryRecord] | None = None,
     worker_model: ModelConfig | None = None,
     on_chunk: Callable[[str], None] | None = None,
+    plugin_manager: Any = None,
 ) -> str:
     """Generate source code for a specific plan subtask using worker models.
 
@@ -68,6 +69,27 @@ def generate(
     Returns:
         The generated raw source code block.
     """
+    if plugin_manager is not None:
+        import os
+
+        from builder_agent.plugin_system import GenerationContext, PluginContext
+        gen_ctx = GenerationContext(
+            subtask_id=subtask.id,
+            subtask_description=subtask.description,
+            acceptance_criteria=subtask.acceptance_criteria,
+            depends_on=subtask.depends_on,
+            spec_request=spec.request,
+            spec_description=spec.description,
+            feedback=feedback,
+            memory_hints=memory_hints,
+        )
+        context = PluginContext(
+            workspace_dir=os.getcwd(),
+            output_type=spec.output_type,
+        )
+        plugin_code = plugin_manager.run_generators(gen_ctx, context, on_chunk=on_chunk)
+        if plugin_code is not None:
+            return strip_fences(plugin_code)
     criteria = "\n".join(f"- {c}" for c in subtask.acceptance_criteria)
     feedback_block = ""
     if feedback:

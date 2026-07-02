@@ -251,6 +251,11 @@ image = "python:3.11-slim"
 memory_limit = "256m"
 cpu_limit = 1.0
 network_access = false
+
+# Plugins config
+[plugins]
+disabled = []
+dir = "plugins"
 ```
 
 ## CLI Reference
@@ -316,6 +321,7 @@ builder_agent/
 ├── budget.py        thread-safe token budget tracking
 ├── cli.py           interactive REPL + one-shot CLI + spinner UI
 ├── __main__.py      python -m builder_agent entry point
+├── plugin_system/   protocols, discovery, manager, and built-in plugins
 └── tests/           127 tests, all LLM calls mocked
 ```
 
