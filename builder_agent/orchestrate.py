@@ -225,6 +225,7 @@ def orchestrate_subtask(
             "score": verdict.score,
             "passed": verdict.passed,
             "issues": verdict.issues,
+            "code": code,
         })
         logger.info(
             "[%s] iter %d — score=%d passed=%s",
@@ -462,9 +463,62 @@ def orchestrate(
     budget: TokenBudget | None = None,
     on_progress: ProgressCallback = _noop_progress,
     resume: bool = False,
+    enable_web_history: bool = False,
 ) -> dict:
+    history = None
+    sse_manager = None
+    build_id = None
+
+    current_on_progress = on_progress
+    def progress_delegate(event: str, data: dict):
+        current_on_progress(event, data)
+
     from builder_agent.llm import set_progress_callback
-    set_progress_callback(on_progress)
+    set_progress_callback(progress_delegate)
+
+    def _enable_web_history():
+        nonlocal current_on_progress, history, sse_manager, build_id
+        from builder_agent.web.events import sse_manager
+        from builder_agent.web.history import BuildHistory
+        history = BuildHistory()
+        with _db_lock:
+            build_id = history.create_build(request, spec.output_type)
+
+        orig_on_progress = current_on_progress
+        def web_on_progress(event: str, data: dict):
+            if event == "verdict":
+                from datetime import datetime, timezone
+                subtask_id = data.get("subtask", "")
+                iteration = data.get("iteration", 1)
+                score = data.get("score", 0)
+                passed = data.get("passed", False)
+                issues = data.get("issues", [])
+                code = data.get("code", "")
+                with _db_lock:
+                    history.add_attempt(
+                        build_id=build_id,
+                        subtask_id=subtask_id,
+                        iteration=iteration,
+                        code=code,
+                        score=score,
+                        passed=passed,
+                        issues=issues,
+                        exec_output=""
+                    )
+                sse_manager.broadcast(build_id, "attempt", {
+                    "subtask_id": subtask_id,
+                    "iteration": iteration,
+                    "score": score,
+                    "passed": passed,
+                    "issues": issues,
+                    "code": code,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+            else:
+                sse_manager.broadcast(build_id, event, data)
+            orig_on_progress(event, data)
+        current_on_progress = web_on_progress
+
     try:
         bid = checkpoint.build_id(request)
         ckpt = checkpoint.load(bid) if resume else None
@@ -474,7 +528,9 @@ def orchestrate(
             the_plan = ckpt["plan"]
             outputs0 = ckpt["outputs"]
             completed_ids0 = ckpt["completed_ids"]
-            on_progress("resumed", {
+            if enable_web_history:
+                _enable_web_history()
+            progress_delegate("resumed", {
                 "build_id": bid,
                 "completed": len(completed_ids0),
                 "total": len(the_plan.subtasks),
@@ -484,16 +540,19 @@ def orchestrate(
                 bid, len(completed_ids0), len(the_plan.subtasks),
             )
         else:
-            on_progress("clarifying", {})
+            progress_delegate("clarifying", {})
             logger.info("Clarifying request...")
             spec = clarify(request, interactive=interactive)
-            on_progress("clarified", {"description": spec.description})
+            progress_delegate("clarified", {"description": spec.description})
             logger.info("Spec: %s", spec.description)
 
-            on_progress("planning", {})
+            if enable_web_history:
+                _enable_web_history()
+
+            progress_delegate("planning", {})
             logger.info("Planning...")
             the_plan = make_plan(spec, memory=memory)
-            on_progress("planned", {
+            progress_delegate("planned", {
                 "count": len(the_plan.subtasks),
                 "ids": [s.id for s in the_plan.subtasks],
                 "subtasks": [
@@ -516,7 +575,7 @@ def orchestrate(
                 the_plan,
                 memory=memory,
                 budget=budget,
-                on_progress=on_progress,
+                on_progress=progress_delegate,
                 build_id=bid,
                 outputs=outputs0,
                 completed_ids=completed_ids0,
@@ -529,6 +588,10 @@ def orchestrate(
             if memory is not None:
                 plan_desc = " -> ".join(s.id for s in the_plan.subtasks)
                 _store_plan_memory(memory, spec, plan_desc, False)
+            if enable_web_history:
+                with _db_lock:
+                    history.update_build_status(build_id, "failed", score=0)
+                sse_manager.broadcast(build_id, "status", {"status": "failed"})
             return {
                 "succeeded": False,
                 "halted_at": res["first_failure_id"],
@@ -542,11 +605,11 @@ def orchestrate(
                 "build_id": bid,
             }
 
-        on_progress("integrating", {})
+        progress_delegate("integrating", {})
         logger.info("Integrating outputs...")
         artifact = integrate(spec, res["outputs"], the_plan)
 
-        on_progress("final_verify", {})
+        progress_delegate("final_verify", {})
         logger.info("Running final verification...")
 
         final_subtask = SubTask(
@@ -562,6 +625,15 @@ def orchestrate(
 
         if final_verdict.passed:
             checkpoint.clear(bid)
+
+        if enable_web_history:
+            status = "passed" if final_verdict.passed else "failed"
+            score = final_verdict.score
+            with _db_lock:
+                history.update_build_status(
+                    build_id, status, score=score, artifact=artifact
+                )
+            sse_manager.broadcast(build_id, "status", {"status": status})
 
         return {
             "succeeded": final_verdict.passed,

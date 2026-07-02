@@ -1071,6 +1071,23 @@ output = 0.30
         return EXIT_FAILURE
 
 
+def _cmd_web(args) -> int:
+    try:
+        from builder_agent.web.app import start_server
+        start_server(host=args.host, port=args.port)
+        return EXIT_SUCCESS
+    except ImportError as e:
+        print(f"Error: Web UI dependencies not installed ({e}).")
+        print(
+            "Please install them with: pip install \"whetstone[web]\" "
+            "or pip install fastapi uvicorn jinja2"
+        )
+        return EXIT_FAILURE
+    except Exception as e:
+        print(f"Error: Failed to start web server: {e}")
+        return EXIT_FAILURE
+
+
 # ── Entrypoint ───────────────────────────────────────────────────────
 
 
@@ -1089,6 +1106,10 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("chat", help="Interactive REPL (default)")
     sub.add_parser("init", help="Generate a default .whetstone.toml configuration file")
+
+    web_p = sub.add_parser("web", help="Start the optional web dashboard")
+    web_p.add_argument("--host", default="127.0.0.1", help="Host to bind")
+    web_p.add_argument("--port", type=int, default=8000, help="Port to bind")
 
     build_p = sub.add_parser("build", help="One-shot build")
     build_p.add_argument("request", help="What to build")
@@ -1155,6 +1176,8 @@ def main(argv: list[str] | None = None) -> int:
         return _repl()
     if args.command == "init":
         return _cmd_init(args)
+    if args.command == "web":
+        return _cmd_web(args)
     if args.command == "build":
         return _cmd_build(args)
     if args.command == "memory":

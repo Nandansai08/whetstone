@@ -375,6 +375,38 @@ Then use it in config:
 WORKER_MODEL = ModelConfig("my_llm", "my-model-id")
 ```
 
+## Web Dashboard
+
+Whetstone includes an optional web dashboard built with FastAPI and HTMX. It allows you to:
+* Browse build history and inspect details of past runs.
+* Monitor active CLI builds in real-time using Server-Sent Events (SSE).
+* Compare code changes between subtask iterations side-by-side using unified diffs.
+* Visualize score trends per subtask across code generation iterations.
+
+### Installation
+
+Install Whetstone with optional web dependencies:
+
+```bash
+pip install -e ".[web]"
+```
+
+### Running the Dashboard
+
+Start the local server (defaults to port `8000`):
+
+```bash
+whetstone web
+```
+
+Or configure the binding host and port:
+
+```bash
+whetstone web --host 127.0.0.1 --port 8080
+```
+
+Once started, open `http://127.0.0.1:8000` in your web browser.
+
 ## Security
 
 The sandbox executes model-generated code via `subprocess` with a timeout. **This is NOT isolation.** Do not use with untrusted input. For production use, swap in a container with no network and resource caps. See [#3](https://github.com/Nandansai08/whetstone/issues/3).
