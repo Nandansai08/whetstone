@@ -23,14 +23,14 @@ classifiers = [
     "Topic :: Software Development :: Code Generators",
 ]
 dependencies = [
-    "openai>=1.0.0",
+    "openai>=2.44.0",
     "python-dotenv>=1.2.2",
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.112.0"]
+anthropic = ["anthropic>=0.116.0"]
 embeddings = ["sentence-transformers>=2.2.0"]
-voyage = ["voyageai>=0.2.0"]
+voyage = ["voyageai>=0.4.1"]
 web = [
     "fastapi>=0.100.0",
     "uvicorn>=0.20.0",
