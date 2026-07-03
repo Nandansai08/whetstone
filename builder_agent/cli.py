@@ -1,3 +1,5 @@
+"""Command-line interface and interactive REPL entrypoint module."""
+
 from __future__ import annotations
 
 import argparse
@@ -373,7 +375,11 @@ def _print_result(result: dict, output_path: str = "", output_dir: str = "") -> 
         u = result["usage"]
         tok = f"{u['total_tokens']:,}"
         lim = f"{u['limit']:,}"
-        print(f"    Tokens {dim(f'{tok} / {lim}')}")
+        cached = u.get("cache_read_tokens", 0)
+        if cached > 0:
+            print(f"    Tokens {dim(f'{tok} / {lim} ({cached:,} cached)')}")
+        else:
+            print(f"    Tokens {dim(f'{tok} / {lim}')}")
 
         cost = u.get("cost")
         max_cost = u.get("max_cost", 0.0)
@@ -531,12 +537,22 @@ def _handle_memory_command(parts: list[str], memory: Memory) -> None:
         print(dim("  Usage: /memory [list|show <id>|clear]"))
 
 
-def _handle_export_command(parts: list[str], last_artifact: str | None) -> None:
+def _handle_export_command(
+    parts: list[str], last_artifact: str | None, last_output_type: str | None = None
+) -> None:
     if not last_artifact:
         print(red("  No build artifact available to export yet."))
         return
 
-    filename = parts[1] if len(parts) > 1 else "artifact.py"
+    ext = ".py"
+    if last_output_type == "javascript":
+        ext = ".js"
+    elif last_output_type == "typescript":
+        ext = ".ts"
+    elif last_output_type == "sql":
+        ext = ".sql"
+
+    filename = parts[1] if len(parts) > 1 else f"artifact{ext}"
 
     import pathlib
     target = pathlib.Path(filename)
@@ -749,6 +765,7 @@ def _repl() -> int:
     build_count = 0
     history: list[dict] = []
     last_artifact: str | None = None
+    last_output_type: str | None = None
     interactive_clarify = getattr(config, "INTERACTIVE_CLARIFY", True)
 
     print(dim("  Type what you want to build, or /help for commands."))
@@ -798,7 +815,7 @@ def _repl() -> int:
 
         if prompt == "/export" or prompt.startswith("/export "):
             parts = prompt.split()
-            _handle_export_command(parts, last_artifact)
+            _handle_export_command(parts, last_artifact, last_output_type)
             continue
 
         if prompt == "/history" or prompt.startswith("/history "):
@@ -863,6 +880,8 @@ def _repl() -> int:
         # Update last artifact and build history
         if result.get("artifact"):
             last_artifact = result["artifact"]
+            spec = result.get("spec")
+            last_output_type = spec.output_type if spec else None
 
         history.append({
             "build_number": build_count,
@@ -1075,6 +1094,14 @@ def _cmd_web(args) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Run the Whetstone command-line tool.
+
+    Args:
+        argv: List of command-line argument strings, or None to read sys.argv.
+
+    Returns:
+        The exit status code (0 for success, non-zero for failure).
+    """
     try:
         from dotenv import load_dotenv
         load_dotenv()

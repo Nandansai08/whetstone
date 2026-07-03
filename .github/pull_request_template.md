@@ -2,16 +2,21 @@
 
 <!-- What does this PR do and why? -->
 
-## Changes
+## Related Issue
 
-- 
+<!-- Closes #N -->
 
-## Testing
+## Type of Change
+
+<!-- Choose one: Bug fix / New feature / Refactoring / Documentation / Other -->
+
+## Testing Checklist
 
 - [ ] `pytest` passes
 - [ ] `ruff check builder_agent/` clean
 - [ ] Tested manually with `whetstone`
 
-## Related issues
+## Documentation Checklist
 
-<!-- Closes #N -->
+- [ ] Code comments/docstrings updated (if applicable)
+- [ ] API documentation generated/verified (if applicable)

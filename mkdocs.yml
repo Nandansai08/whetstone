@@ -1,0 +1,58 @@
+site_name: Whetstone
+site_description: AI-powered code builder
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.expand
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: true
+            show_root_heading: true
+            show_category_toc: true
+            show_root_full_path: false
+            docstring_style: google
+
+nav:
+  - Home: index.md
+  - Architecture: ARCHITECTURE.md
+  - Getting Started: getting_started.md
+  - Tutorials: tutorials.md
+  - Examples: examples.md
+  - API Reference:
+      - Overview: api/index.md
+      - budget: api/budget.md
+      - clarify: api/clarify.md
+      - cli: api/cli.md
+      - config: api/config.md
+      - embedders: api/embedders.md
+      - generate: api/generate.md
+      - integrate: api/integrate.md
+      - llm: api/llm.md
+      - memory: api/memory.md
+      - orchestrate: api/orchestrate.md
+      - plan: api/plan.md
+      - sandbox: api/sandbox.md
+      - schemas: api/schemas.md
+      - verify: api/verify.md

@@ -34,6 +34,14 @@ def _mock_anthropic_response(text: str) -> MagicMock:
     block.text = text
     resp = MagicMock()
     resp.content = [block]
+
+    usage = MagicMock()
+    usage.input_tokens = 80
+    usage.output_tokens = 20
+    usage.cache_read_input_tokens = 10
+    usage.cache_creation_input_tokens = 5
+    resp.usage = usage
+
     return resp
 
 
@@ -44,6 +52,15 @@ def _mock_openai_response(text: str) -> MagicMock:
     choice.message = msg
     resp = MagicMock()
     resp.choices = [choice]
+
+    usage = MagicMock()
+    usage.prompt_tokens = 100
+    usage.completion_tokens = 30
+    details = MagicMock()
+    details.cached_tokens = 20
+    usage.prompt_tokens_details = details
+    resp.usage = usage
+
     return resp
 
 
@@ -99,7 +116,13 @@ def test_anthropic_passes_system(mock_cls):
 
     _ask_anthropic("test", model=ANTHROPIC_MODEL, system="be helpful")
     call_kwargs = client.messages.create.call_args[1]
-    assert call_kwargs["system"] == "be helpful"
+    assert call_kwargs["system"] == [
+        {
+            "type": "text",
+            "text": "be helpful",
+            "cache_control": {"type": "ephemeral"}
+        }
+    ]
 
 
 @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})
@@ -676,3 +699,44 @@ def test_ask_stream_no_retry_mid_stream(mock_sleep):
     assert res == ["chunk1"]
     assert len(calls) == 1
     mock_sleep.assert_not_called()
+
+
+@patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})
+@patch("anthropic.Anthropic")
+def test_prompt_caching_parsing_anthropic(mock_cls):
+    from builder_agent.budget import TokenBudget
+    from builder_agent.llm import set_budget
+
+    client = MagicMock()
+    client.messages.create.return_value = _mock_anthropic_response("ok")
+    mock_cls.return_value = client
+
+    b = TokenBudget(limit=1000)
+    set_budget(b)
+    try:
+        _ask_anthropic("test", model=ANTHROPIC_MODEL, system="be helpful")
+        assert b.cache_read_tokens == 10
+        assert b.cache_creation_tokens == 5
+        assert b.input_tokens == 95
+    finally:
+        set_budget(None)
+
+
+@patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"})
+@patch("openai.OpenAI")
+def test_prompt_caching_parsing_openai(mock_cls):
+    from builder_agent.budget import TokenBudget
+    from builder_agent.llm import set_budget
+
+    client = MagicMock()
+    client.chat.completions.create.return_value = _mock_openai_response("ok")
+    mock_cls.return_value = client
+
+    b = TokenBudget(limit=1000)
+    set_budget(b)
+    try:
+        _ask_openai("test", model=OPENAI_MODEL, system="be helpful")
+        assert b.cache_read_tokens == 20
+        assert b.input_tokens == 100
+    finally:
+        set_budget(None)

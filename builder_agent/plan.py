@@ -1,3 +1,5 @@
+"""Decomposition of specification details into topological plans."""
+
 from __future__ import annotations
 
 import json
@@ -63,6 +65,15 @@ def _topo_sort(subtasks: list[SubTask]) -> list[SubTask]:
 
 
 def plan(spec: Spec, memory: Memory | None = None) -> Plan:
+    """Decompose a Spec object into a topologically sorted build Plan.
+
+    Args:
+        spec: Target build specifications structure.
+        memory: Stored experiences database.
+
+    Returns:
+        The generated execution Plan containing subtasks.
+    """
     criteria = "\n".join(f"  - {c}" for c in spec.acceptance_criteria)
 
     memory_block = ""

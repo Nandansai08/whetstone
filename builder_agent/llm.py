@@ -1,3 +1,5 @@
+"""Provider-agnostic LLM query, streaming, and embedding wrapper."""
+
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +10,7 @@ import time
 from typing import Callable, Generator
 
 from builder_agent import config
+from builder_agent.budget import TokenBudget
 from builder_agent.config import ModelConfig
 
 for _name in ("httpx", "httpcore", "openai", "anthropic"):
@@ -33,17 +36,31 @@ def get_progress_callback():
     return _progress_callback
 
 
-def set_budget(budget) -> None:
+def set_budget(budget: TokenBudget | None) -> None:
+    """Set the active TokenBudget object for token cost tracking.
+
+    Args:
+        budget: TokenBudget instance or None to disable tracking.
+    """
     global _budget
     _budget = budget
 
 
-def get_budget():
+def get_budget() -> TokenBudget | None:
+    """Retrieve the active TokenBudget instance.
+
+    Returns:
+        The active TokenBudget instance, or None if budget tracking is disabled.
+    """
     return _budget
 
 
 def _record_usage(
-    input_tokens: int, output_tokens: int, model: ModelConfig | None = None
+    input_tokens: int,
+    output_tokens: int,
+    model: ModelConfig | None = None,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0,
 ) -> None:
     if _budget is not None:
         cost = None
@@ -55,10 +72,24 @@ def _record_usage(
                     (input_tokens / 1_000_000.0) * pricing["input"]
                     + (output_tokens / 1_000_000.0) * pricing["output"]
                 )
-        _budget.record(input_tokens, output_tokens, cost=cost)
+        _budget.record(
+            input_tokens,
+            output_tokens,
+            cost=cost,
+            cache_read_tokens=cache_read_tokens,
+            cache_creation_tokens=cache_creation_tokens,
+        )
 
 
 def strip_fences(text: str) -> str:
+    """Strip markdown code block fences (e.g. ```python) from LLM output.
+
+    Args:
+        text: Raw response string containing code block fences.
+
+    Returns:
+        Clean source code string without markdown surrounds.
+    """
     text = text.strip()
     if text.startswith("```"):
         first_nl = text.find("\n")
@@ -70,6 +101,14 @@ def strip_fences(text: str) -> str:
 
 
 def extract_json(text: str) -> str:
+    """Scan response text and extract the first valid nested JSON block or array.
+
+    Args:
+        text: Raw text string potentially containing mixed prose and JSON.
+
+    Returns:
+        The extracted clean JSON string.
+    """
     text = strip_fences(text)
     obj_start = text.find('{')
     arr_start = text.find('[')
@@ -221,15 +260,33 @@ def _execute_stream_with_retry(
 
 
 def register_provider(name: str, fn: Callable) -> None:
+    """Register a custom LLM text completion provider function.
+
+    Args:
+        name: Name identifier for the provider.
+        fn: Callback function invoked for provider text completion calls.
+    """
     _providers[name] = fn
 
 
 
 def register_stream_provider(name: str, fn: Callable) -> None:
+    """Register a custom LLM streaming completion provider function.
+
+    Args:
+        name: Name identifier for the provider.
+        fn: Callback function yielding chunks of text.
+    """
     _stream_providers[name] = fn
 
 
 def register_embed_provider(name: str, fn: Callable) -> None:
+    """Register a custom LLM text embedding provider function.
+
+    Args:
+        name: Name identifier for the provider.
+        fn: Callback function returning lists of floats.
+    """
     _embed_providers[name] = fn
 
 
@@ -238,6 +295,15 @@ def embed(
     *,
     model: ModelConfig,
 ) -> list[float]:
+    """Generate text embedding vector using the configured model provider.
+
+    Args:
+        text: String of text to embed.
+        model: Target model configuration profile.
+
+    Returns:
+        A list of floats representing the embedding vector.
+    """
     fn = _embed_providers.get(model.provider)
     if fn is None:
         fn = _default_embed_provider(model.provider)
@@ -251,6 +317,17 @@ def ask(
     system: str = "",
     max_tokens: int = 4096,
 ) -> str:
+    """Send text completion request to configuration model provider.
+
+    Args:
+        prompt: Raw instructions query to model.
+        model: Configuration of target LLM model.
+        system: System instructions instructions context block.
+        max_tokens: Maximum response tokens permitted.
+
+    Returns:
+        The response content string.
+    """
     fn = _providers.get(model.provider)
     if fn is None:
         fn = _default_provider(model.provider)
@@ -266,6 +343,17 @@ def ask_stream(
     system: str = "",
     max_tokens: int = 4096,
 ) -> Generator[str, None, None]:
+    """Send streaming text completion request to model provider.
+
+    Args:
+        prompt: Instructions query.
+        model: Configuration of target LLM.
+        system: System instructions instructions block.
+        max_tokens: Maximum tokens permitted.
+
+    Yields:
+        Chunks of completion response tokens.
+    """
     fn = _stream_providers.get(model.provider)
     if fn is None:
         if model.provider in ("anthropic", "openai"):
@@ -321,13 +409,24 @@ def _ask_anthropic(
         "messages": [{"role": "user", "content": prompt}],
     }
     if system:
-        msg_kwargs["system"] = system
+        msg_kwargs["system"] = [
+            {
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
     response = client.messages.create(**msg_kwargs)
     if hasattr(response, "usage") and response.usage:
+        cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+        cache_create = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+        total_input = response.usage.input_tokens + cache_read + cache_create
         _record_usage(
-            response.usage.input_tokens,
+            total_input,
             response.usage.output_tokens,
             model=model,
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_create,
         )
     return response.content[0].text or ""
 
@@ -367,10 +466,18 @@ def _ask_openai(
         max_tokens=max_tokens,
     )
     if hasattr(response, "usage") and response.usage:
+        cache_read = 0
+        details = getattr(response.usage, "prompt_tokens_details", None)
+        if details is not None:
+            if isinstance(details, dict):
+                cache_read = details.get("cached_tokens", 0) or 0
+            else:
+                cache_read = getattr(details, "cached_tokens", 0) or 0
         _record_usage(
             response.usage.prompt_tokens or 0,
             response.usage.completion_tokens or 0,
             model=model,
+            cache_read_tokens=cache_read,
         )
     return response.choices[0].message.content or ""
 
@@ -416,17 +523,28 @@ def _ask_stream_anthropic(
         "messages": [{"role": "user", "content": prompt}],
     }
     if system:
-        msg_kwargs["system"] = system
+        msg_kwargs["system"] = [
+            {
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"}
+            }
+        ]
 
     with client.messages.stream(**msg_kwargs) as stream:
         for text in stream.text_stream:
             yield text
         message = stream.get_final_message()
         if message and hasattr(message, "usage") and message.usage:
+            cache_read = getattr(message.usage, "cache_read_input_tokens", 0) or 0
+            cache_create = getattr(message.usage, "cache_creation_input_tokens", 0) or 0
+            total_input = message.usage.input_tokens + cache_read + cache_create
             _record_usage(
-                message.usage.input_tokens,
+                total_input,
                 message.usage.output_tokens,
                 model=model,
+                cache_read_tokens=cache_read,
+                cache_creation_tokens=cache_create,
             )
 
 
@@ -478,10 +596,18 @@ def _ask_stream_openai(
 
     for chunk in response:
         if hasattr(chunk, "usage") and chunk.usage:
+            cache_read = 0
+            details = getattr(chunk.usage, "prompt_tokens_details", None)
+            if details is not None:
+                if isinstance(details, dict):
+                    cache_read = details.get("cached_tokens", 0) or 0
+                else:
+                    cache_read = getattr(details, "cached_tokens", 0) or 0
             _record_usage(
                 chunk.usage.prompt_tokens or 0,
                 chunk.usage.completion_tokens or 0,
                 model=model,
+                cache_read_tokens=cache_read,
             )
         if chunk.choices:
             delta = chunk.choices[0].delta.content
@@ -539,6 +665,17 @@ async def async_ask(
     system: str = "",
     max_tokens: int = 4096,
 ) -> str:
+    """Send asynchronous text completion request to configuration model.
+
+    Args:
+        prompt: Instructions query.
+        model: Configuration of target LLM.
+        system: System instructions block.
+        max_tokens: Maximum tokens permitted.
+
+    Returns:
+        The response content string.
+    """
     return await asyncio.to_thread(
         ask, prompt, model=model, system=system, max_tokens=max_tokens
     )
