@@ -6,18 +6,20 @@ def test_prune_empty_db(tmp_path):
     history = BuildHistory(str(tmp_path / "history.db"))
     history.prune()
 
+
 def test_prune_age_removes_old_build(tmp_path):
     history = BuildHistory(str(tmp_path / "history.db"))
     with history._connect() as conn:
-     conn.execute(
-        "INSERT INTO builds (id, request, output_type, status, created_at) "
-        "VALUES (?, ?, ?, ?, ?)",
-        ("old-build", "test", "text", "done", "2000-01-01T00:00:00+00:00"),
-    )
+        conn.execute(
+            "INSERT INTO builds (id, request, output_type, status, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("old-build", "test", "text", "done", "2000-01-01T00:00:00+00:00"),
+        )
     history.prune()
 
     builds = history.get_builds()
     assert builds == []
+
 
 def test_prune_count_removes_old_builds(tmp_path):
     history = BuildHistory(str(tmp_path / "history.db"))
