@@ -35,7 +35,7 @@ def load_local_plugins(plugin_dir: str = "plugins") -> List[Any]:
         return plugins
 
     if str(plugins_path) not in sys.path:
-        sys.path.insert(0, str(plugins_path))
+        sys.path.append(str(plugins_path))
 
     for path in plugins_path.glob("*.py"):
         if path.name == "__init__.py":

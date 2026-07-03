@@ -322,7 +322,7 @@ builder_agent/
 ├── cli.py           interactive REPL + one-shot CLI + spinner UI
 ├── __main__.py      python -m builder_agent entry point
 ├── plugin_system/   protocols, discovery, manager, and built-in plugins
-└── tests/           127 tests, all LLM calls mocked
+└── tests/           248 tests, all LLM calls mocked
 ```
 
 ### Verification pipeline

@@ -83,6 +83,17 @@ class LinterPlugin:
                 blocking=False,
             )
 
+        if not self._has_eslint_config():
+            return PluginVerificationResult(
+                passed=True,
+                issues=[],
+                exec_output=(
+                    "No ESLint configuration found in workspace. "
+                    "Skipped JS/TS linting."
+                ),
+                blocking=False,
+            )
+
         ext = ".ts" if output_type == "typescript" else ".js"
         with tempfile.TemporaryDirectory() as tmpdir:
             target = os.path.join(tmpdir, f"code{ext}")
@@ -126,3 +137,35 @@ class LinterPlugin:
                     exec_output="ESLint via npx not found. Skipped JS/TS linting.",
                     blocking=False,
                 )
+
+    def _has_eslint_config(self) -> bool:
+        """Check if any standard ESLint configuration file exists in the workspace."""
+        config_files = [
+            "eslint.config.js",
+            "eslint.config.mjs",
+            "eslint.config.cjs",
+            ".eslintrc",
+            ".eslintrc.js",
+            ".eslintrc.cjs",
+            ".eslintrc.yaml",
+            ".eslintrc.yml",
+            ".eslintrc.json",
+        ]
+        workspace = os.getcwd()
+        for filename in config_files:
+            if os.path.exists(os.path.join(workspace, filename)):
+                return True
+
+        package_json_path = os.path.join(workspace, "package.json")
+        if os.path.exists(package_json_path):
+            try:
+                import json
+
+                with open(package_json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if "eslintConfig" in data:
+                        return True
+            except Exception:
+                pass
+
+        return False

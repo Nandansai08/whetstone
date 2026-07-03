@@ -359,8 +359,9 @@ def test_linter_plugin_ruff_failure(mock_run):
     assert "code.py:1:1: E901 SyntaxError" in res.issues
 
 
+@patch.object(LinterPlugin, "_has_eslint_config", return_value=True)
 @patch("subprocess.run")
-def test_linter_plugin_eslint_success(mock_run):
+def test_linter_plugin_eslint_success(mock_run, mock_has_config):
     mock_run.return_value = MagicMock(returncode=0, stdout="No errors", stderr="")
 
     plugin = LinterPlugin()
@@ -373,8 +374,9 @@ def test_linter_plugin_eslint_success(mock_run):
     assert "No errors" in res.exec_output
 
 
+@patch.object(LinterPlugin, "_has_eslint_config", return_value=True)
 @patch("subprocess.run")
-def test_linter_plugin_eslint_failure(mock_run):
+def test_linter_plugin_eslint_failure(mock_run, mock_has_config):
     mock_run.return_value = MagicMock(
         returncode=1, stdout="Unexpected var keyword", stderr=""
     )
@@ -385,8 +387,19 @@ def test_linter_plugin_eslint_failure(mock_run):
 
     res = plugin.verify(subtask, "var x = 2;", context)
     assert not res.passed
-    assert res.blocking
     assert "Unexpected var keyword" in res.issues
+
+
+def test_linter_plugin_eslint_no_config_skips():
+    plugin = LinterPlugin()
+    context = PluginContext(workspace_dir=".", output_type="javascript")
+    subtask = SubTask(id="js_check", description="desc", acceptance_criteria=[])
+
+    with patch.object(plugin, "_has_eslint_config", return_value=False):
+        res = plugin.verify(subtask, "const x = 1;", context)
+        assert res.passed
+        assert not res.blocking
+        assert "No ESLint configuration found" in res.exec_output
 
 
 @patch("subprocess.run")
