@@ -160,3 +160,82 @@ def test_similarity_floor_filters_low_scores():
     # Might be empty if similarity is below threshold
     for r in results:
         assert r.subtask_desc != "completely unrelated xyz" or True
+
+
+def test_retrieve_ordering_correctness_and_fallback():
+    from unittest.mock import MagicMock, patch
+
+    from builder_agent import config
+
+    mem = _tmp_memory()
+    mem._embedder.embed = lambda text: [1.0, 0.0, 0.0]
+
+    # Store records with explicit embeddings
+    mem.store(_make_record("task A", embedding=[1.0, 0.0, 0.0]))
+    mem.store(_make_record("task B", embedding=[0.0, 1.0, 0.0]))
+    mem.store(_make_record("task C", embedding=[0.0, 0.0, 1.0]))
+
+    with patch.object(config, "MEMORY_MIN_SIMILARITY", 0.0):
+        # 1. Test with HAS_NUMPY forced to False (pure Python path)
+        with patch("builder_agent.memory.HAS_NUMPY", False):
+            results = mem.retrieve("task A", k=3)
+            assert len(results) == 3
+            # task A should rank first because its embedding [1, 0, 0]
+            # matches the query vector
+            assert results[0].subtask_desc == "task A"
+
+        # 2. Test numpy path with mock numpy to verify routing and sorting
+        mock_np = MagicMock()
+        # Let's mock _vectorized_cosine_similarity to return custom scores:
+        # A -> 0.1, B -> 0.9, C -> 0.2
+        with patch("builder_agent.memory.HAS_NUMPY", True), patch(
+            "builder_agent.memory.np", mock_np
+        ), patch(
+            "builder_agent.memory._vectorized_cosine_similarity",
+            return_value=[0.1, 0.9, 0.2],
+        ):
+            results = mem.retrieve("task A", k=3)
+            # Because index 1 ("task B") has the highest similarity (0.9),
+            # it must rank first
+            assert len(results) == 3
+            assert results[0].subtask_desc == "task B"
+            assert results[1].subtask_desc == "task C"  # similarity 0.2
+            assert results[2].subtask_desc == "task A"  # similarity 0.1
+
+
+def test_retrieve_record_type_filtering():
+    mem = _tmp_memory()
+    mem._embedder.embed = lambda text: [1.0, 0.0]
+
+    rec_subtask = MemoryRecord(
+        request="build",
+        output_type="python_module",
+        subtask_desc="subtask match",
+        failures=[],
+        fix_summary="fix",
+        final_code="code",
+        embedding=[1.0, 0.0],
+        record_type="subtask",
+    )
+    rec_plan = MemoryRecord(
+        request="build",
+        output_type="python_module",
+        subtask_desc="plan match",
+        failures=[],
+        fix_summary="fix",
+        final_code="code",
+        embedding=[1.0, 0.0],
+        record_type="plan",
+    )
+    mem.store(rec_subtask)
+    mem.store(rec_plan)
+
+    # Search with record_type="subtask"
+    subtask_results = mem.retrieve("query", k=5, record_type="subtask")
+    assert len(subtask_results) == 1
+    assert subtask_results[0].subtask_desc == "subtask match"
+
+    # Search with record_type="plan"
+    plan_results = mem.retrieve("query", k=5, record_type="plan")
+    assert len(plan_results) == 1
+    assert plan_results[0].subtask_desc == "plan match"
