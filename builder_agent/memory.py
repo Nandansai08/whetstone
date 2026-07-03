@@ -11,6 +11,13 @@ from builder_agent import config
 from builder_agent.embedders import Embedder, get_embedder
 from builder_agent.schemas import MemoryRecord
 
+try:
+    import numpy as np
+    HAS_NUMPY = True
+except ImportError:
+    np = None
+    HAS_NUMPY = False
+
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if len(a) != len(b) or not a:
@@ -21,6 +28,20 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return dot / (norm_a * norm_b)
+
+
+def _vectorized_cosine_similarity(
+    query_vec: list[float], embeddings_matrix: np.ndarray
+) -> np.ndarray:
+    q = np.array(query_vec)
+    q_norm = np.linalg.norm(q)
+    if q_norm == 0:
+        return np.zeros(embeddings_matrix.shape[0])
+
+    norms = np.linalg.norm(embeddings_matrix, axis=1)
+    norms[norms == 0.0] = 1.0
+
+    return np.dot(embeddings_matrix, q) / (norms * q_norm)
 
 
 _SCHEMA = """
@@ -122,41 +143,97 @@ class Memory:
         k = k or config.MEMORY_TOP_K
         query_vec = self._embedder.embed(query)
 
+        # Pass 1: Query only id and embedding
         with self._connect() as conn:
             if record_type:
                 rows = conn.execute(
-                    "SELECT request, output_type, subtask_desc, failures, "
-                    "fix_summary, final_code, embedding, record_type "
-                    "FROM memory WHERE record_type = ?",
+                    "SELECT id, embedding FROM memory WHERE record_type = ?",
                     (record_type,),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT request, output_type, subtask_desc, failures, "
-                    "fix_summary, final_code, embedding, record_type "
-                    "FROM memory"
+                    "SELECT id, embedding FROM memory"
                 ).fetchall()
 
-        scored: list[tuple[float, MemoryRecord]] = []
-        for row in rows:
-            embedding = json.loads(row[6])
-            sim = _cosine_similarity(query_vec, embedding)
-            if sim < config.MEMORY_MIN_SIMILARITY:
-                continue
-            record = MemoryRecord(
-                request=row[0],
-                output_type=row[1],
-                subtask_desc=row[2],
-                failures=json.loads(row[3]),
-                fix_summary=row[4],
-                final_code=row[5],
-                embedding=embedding,
-                record_type=row[7],
-            )
-            scored.append((sim, record))
+        if not rows:
+            return []
 
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [r for _, r in scored[:k]]
+        candidate_ids = []
+        embeddings = []
+        for r_id, emb_json in rows:
+            try:
+                emb = json.loads(emb_json)
+                candidate_ids.append(r_id)
+                embeddings.append(emb)
+            except Exception:
+                continue
+
+        if not candidate_ids:
+            return []
+
+        scored_ids: list[tuple[float, int]] = []
+        if HAS_NUMPY:
+            try:
+                emb_matrix = np.array(embeddings)
+                similarities = _vectorized_cosine_similarity(query_vec, emb_matrix)
+                for idx, sim in enumerate(similarities):
+                    if sim >= config.MEMORY_MIN_SIMILARITY:
+                        scored_ids.append((float(sim), candidate_ids[idx]))
+            except Exception:
+                # Fallback to pure Python on unexpected numpy error
+                for idx, emb in enumerate(embeddings):
+                    sim = _cosine_similarity(query_vec, emb)
+                    if sim >= config.MEMORY_MIN_SIMILARITY:
+                        scored_ids.append((sim, candidate_ids[idx]))
+        else:
+            for idx, emb in enumerate(embeddings):
+                sim = _cosine_similarity(query_vec, emb)
+                if sim >= config.MEMORY_MIN_SIMILARITY:
+                    scored_ids.append((sim, candidate_ids[idx]))
+
+        scored_ids.sort(key=lambda x: x[0], reverse=True)
+        top_k_candidates = scored_ids[:k]
+
+        if not top_k_candidates:
+            return []
+
+        top_ids = [item[1] for item in top_k_candidates]
+
+        # Pass 2: Fetch full records only for the matched top-k IDs
+        placeholders = ",".join("?" for _ in top_ids)
+        query_sql = f"""
+            SELECT request, output_type, subtask_desc, failures,
+                   fix_summary, final_code, embedding, record_type, id
+            FROM memory WHERE id IN ({placeholders})
+        """
+        with self._connect() as conn:
+            full_rows = conn.execute(query_sql, top_ids).fetchall()
+
+        records_map = {}
+        for row in full_rows:
+            rec_id = row[8]
+            try:
+                record = MemoryRecord(
+                    request=row[0],
+                    output_type=row[1],
+                    subtask_desc=row[2],
+                    failures=json.loads(row[3]),
+                    fix_summary=row[4],
+                    final_code=row[5],
+                    embedding=json.loads(row[6]),
+                    record_type=row[7],
+                )
+                records_map[rec_id] = record
+            except Exception:
+                continue
+
+        # Re-sort to preserve exact similarity order from Pass 1
+        ordered_records = []
+        for _, rec_id in top_k_candidates:
+            if rec_id in records_map:
+                ordered_records.append(records_map[rec_id])
+
+        return ordered_records
 
     def list_records(
         self, record_type: str | None = None,
