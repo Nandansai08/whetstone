@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.112.0"]
+anthropic = ["anthropic>=0.116.0"]
 embeddings = ["sentence-transformers>=2.2.0"]
 voyage = ["voyageai>=0.4.1"]
 dev = [
