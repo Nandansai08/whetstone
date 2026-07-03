@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
-from typing import Protocol
+from typing import Any, Protocol
 
 from builder_agent import config
 from builder_agent.llm import ask, extract_json, strip_fences
@@ -560,7 +560,10 @@ _VERIFIERS: dict[str, Verifier] = {
 
 
 def verify(
-    subtask: SubTask, code: str | dict[str, str], output_type: str = "python_module"
+    subtask: SubTask,
+    code: str | dict[str, str],
+    output_type: str = "python_module",
+    plugin_manager: Any = None,
 ) -> Verdict:
     """Dispatch code verification tasks to specific verifier instances.
 
@@ -573,4 +576,28 @@ def verify(
         The execution evaluation Verdict metadata.
     """
     verifier = _VERIFIERS.get(output_type, _VERIFIERS["python_module"])
-    return verifier.verify(subtask, code)
+    verdict = verifier.verify(subtask, code)
+
+    if plugin_manager is not None:
+        import os
+
+        from builder_agent.plugin_system import PluginContext
+
+        context = PluginContext(
+            workspace_dir=os.getcwd(),
+            output_type=output_type,
+        )
+        plugin_results = plugin_manager.run_verifiers(subtask, code, context)
+        for res in plugin_results:
+            if res.issues:
+                verdict.issues.extend(res.issues)
+            if res.exec_output:
+                if verdict.exec_output:
+                    verdict.exec_output += "\n\n"
+                verdict.exec_output += (
+                    f"--- Plugin Verification Output ---\n{res.exec_output}"
+                )
+            if not res.passed and res.blocking:
+                verdict.passed = False
+
+    return verdict
