@@ -322,7 +322,7 @@ builder_agent/
 ├── cli.py           interactive REPL + one-shot CLI + spinner UI
 ├── __main__.py      python -m builder_agent entry point
 ├── plugin_system/   protocols, discovery, manager, and built-in plugins
-└── tests/           248 tests, all LLM calls mocked
+└── tests/           249 tests, all LLM calls mocked
 ```
 
 ### Verification pipeline
@@ -358,7 +358,7 @@ return best   ← always return highest-scoring attempt
 # Install
 pip install -e ".[dev]"
 
-# Test (127 tests, ~10s, no API calls)
+# Test (249 tests, ~10s, no API calls)
 pytest
 
 # Lint
