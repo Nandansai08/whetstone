@@ -654,7 +654,7 @@ def test_no_retry_on_keyboard_interrupt(mock_sleep):
     mock_sleep.assert_not_called()
 
 
-@patch("time.sleep")
+@patch("builder_agent.llm.time.sleep")
 def test_ask_stream_retry_before_start(mock_sleep):
     calls = []
     import httpx
@@ -675,7 +675,7 @@ def test_ask_stream_retry_before_start(mock_sleep):
     mock_sleep.assert_called_once_with(1.0)
 
 
-@patch("time.sleep")
+@patch("builder_agent.llm.time.sleep")
 def test_ask_stream_no_retry_mid_stream(mock_sleep):
     calls = []
     import httpx
