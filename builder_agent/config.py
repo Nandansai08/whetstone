@@ -54,6 +54,10 @@ TOKEN_BUDGET = 200_000
 MEMORY_DB_PATH = "./builder_memory.db"
 MEMORY_TOP_K = 3
 MEMORY_MIN_SIMILARITY = 0.4
+
+MAX_BUILDS = 1000
+MAX_AGE_DAYS = 30
+
 EMBEDDER = "tfidf"
 MAX_SUBTASKS = 5
 INTERACTIVE_CLARIFY = True
@@ -113,6 +117,8 @@ def _load_and_apply_config() -> None:
             "memory_db_path": "MEMORY_DB_PATH",
             "memory_top_k": "MEMORY_TOP_K",
             "memory_min_similarity": "MEMORY_MIN_SIMILARITY",
+            "max_builds": "MAX_BUILDS",
+            "max_age_days": "MAX_AGE_DAYS",
             "embedder": "EMBEDDER",
             "max_subtasks": "MAX_SUBTASKS",
             "max_retries": "MAX_RETRIES",
