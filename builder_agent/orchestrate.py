@@ -501,14 +501,6 @@ def orchestrate(
     resume: bool = False,
     enable_web_history: bool = False,
 ) -> dict:
-    history = None
-    sse_manager = None
-    build_id = None
-
-    current_on_progress = on_progress
-    def progress_delegate(event: str, data: dict):
-        current_on_progress(event, data)
-
     """Execute the complete build pipeline (clarify, plan, orchestrate, integrate).
 
     Args:
@@ -522,6 +514,14 @@ def orchestrate(
     Returns:
         dict: A dictionary containing final build output code and build execution logs.
     """
+    history = None
+    sse_manager = None
+    build_id = None
+
+    current_on_progress = on_progress
+    def progress_delegate(event: str, data: dict):
+        current_on_progress(event, data)
+
     from builder_agent.plugin_system import PluginManager
     plugin_manager = PluginManager()
     from builder_agent.llm import set_progress_callback
