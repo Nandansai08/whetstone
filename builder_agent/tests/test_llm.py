@@ -117,11 +117,7 @@ def test_anthropic_passes_system(mock_cls):
     _ask_anthropic("test", model=ANTHROPIC_MODEL, system="be helpful")
     call_kwargs = client.messages.create.call_args[1]
     assert call_kwargs["system"] == [
-        {
-            "type": "text",
-            "text": "be helpful",
-            "cache_control": {"type": "ephemeral"}
-        }
+        {"type": "text", "text": "be helpful", "cache_control": {"type": "ephemeral"}}
     ]
 
 
@@ -235,13 +231,13 @@ def test_strip_fences_json():
 
 
 def test_strip_fences_python():
-    raw = '```python\ndef add(a, b):\n    return a + b\n```'
-    assert strip_fences(raw) == 'def add(a, b):\n    return a + b'
+    raw = "```python\ndef add(a, b):\n    return a + b\n```"
+    assert strip_fences(raw) == "def add(a, b):\n    return a + b"
 
 
 def test_strip_fences_bare():
-    raw = '```\n[1, 2, 3]\n```'
-    assert strip_fences(raw) == '[1, 2, 3]'
+    raw = "```\n[1, 2, 3]\n```"
+    assert strip_fences(raw) == "[1, 2, 3]"
 
 
 def test_strip_fences_no_fences():
@@ -303,6 +299,12 @@ def test_extract_json_string_with_braces():
     assert data["msg"] == "use {x} and }"
 
 
+def test_extract_json_skips_invalid_brace_candidate():
+    raw = "Sure, here's the {result} you wanted: [1, 2, 3]"
+    result = extract_json(raw)
+    assert json.loads(result) == [1, 2, 3]
+
+
 def test_async_ask_fallback():
     custom_model = ModelConfig("custom_fallback", "some-model")
 
@@ -315,6 +317,8 @@ def test_async_ask_fallback():
         mock_ask.assert_called_once_with(
             "hello", model=custom_model, system="be quiet", max_tokens=100
         )
+
+
 @patch("builder_agent.llm._ask_stream_openai")
 def test_ask_stream_dispatches_to_openai(mock_fn):
     mock_fn.return_value = (chunk for chunk in ["hi", " there"])
@@ -441,10 +445,12 @@ def test_retry_once_then_succeeds(mock_sleep):
     m = ModelConfig("test_retry_once", "model-v1")
 
     progress_events = []
+
     def progress_callback(event, data):
         progress_events.append((event, data))
 
     from builder_agent.llm import set_progress_callback
+
     set_progress_callback(progress_callback)
     try:
         res = ask("hello", model=m)
@@ -589,9 +595,7 @@ def test_no_retry_on_bad_request_or_auth(mock_sleep):
         calls.append(prompt)
         req = httpx.Request("POST", "https://api.openai.com")
         resp = httpx.Response(status_code=401, request=req)
-        raise openai.AuthenticationError(
-            "Invalid API Key", response=resp, body=None
-        )
+        raise openai.AuthenticationError("Invalid API Key", response=resp, body=None)
 
     register_provider("test_no_retry_401", mock_provider)
     m = ModelConfig("test_no_retry_401", "model-v1")
@@ -616,9 +620,7 @@ def test_no_retry_on_validation_error(mock_sleep):
         calls.append(prompt)
         req = httpx.Request("POST", "https://api.openai.com")
         resp = httpx.Response(status_code=400, request=req)
-        raise openai.BadRequestError(
-            "Validation failed", response=resp, body=None
-        )
+        raise openai.BadRequestError("Validation failed", response=resp, body=None)
 
     register_provider("test_no_retry_400", mock_provider)
     m = ModelConfig("test_no_retry_400", "model-v1")
