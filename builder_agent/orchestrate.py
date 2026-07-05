@@ -661,7 +661,6 @@ def orchestrate(
         logger.info("Integrating outputs...")
         artifact = integrate(spec, res["outputs"], the_plan)
 
-        progress_delegate("final_verify", {})
         # Run artifact post-processors
         if plugin_manager is not None:
             import os
@@ -675,7 +674,7 @@ def orchestrate(
                 spec, artifact, context
             )
 
-        on_progress("final_verify", {})
+        progress_delegate("final_verify", {})
         logger.info("Running final verification...")
 
         final_subtask = SubTask(
