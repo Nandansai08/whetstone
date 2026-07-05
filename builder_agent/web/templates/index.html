@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whetstone Build Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: linear-gradient(135deg, #090d16 0%, #111029 100%);
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body class="text-slate-100 flex flex-col justify-between">
+    <header class="border-b border-slate-800 bg-slate-950/40 backdrop-blur sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl font-bold bg-gradient-to-r from-violet-400 to-indigo-400 bg-clip-text text-transparent">Whetstone</span>
+                <span class="text-xs bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full font-medium">Dashboard</span>
+            </div>
+            <div class="text-sm text-slate-400">Local build observer</div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-6 py-10 w-full flex-grow">
+        <div class="mb-10">
+            <h1 class="text-4xl font-bold tracking-tight mb-2">Build History</h1>
+            <p class="text-slate-400 text-lg">Observe execution logs, code iterations, and validation scores.</p>
+        </div>
+
+        <div class="bg-slate-900/40 backdrop-blur-md border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
+            <div class="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-950/30">
+                <h2 class="text-xl font-semibold">Previous Runs</h2>
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-800 px-3 py-1 rounded-full">{{ builds|length }} builds</span>
+            </div>
+
+            {% if not builds %}
+            <div class="p-16 text-center">
+                <div class="w-16 h-16 mx-auto mb-4 rounded-full bg-slate-800/30 border border-slate-700 flex items-center justify-center">
+                    <span class="text-2xl text-slate-500">∅</span>
+                </div>
+                <h3 class="text-lg font-medium mb-1">No builds recorded yet</h3>
+                <p class="text-slate-500 text-sm max-w-sm mx-auto">Run a build from the CLI command line using "whetstone build &lt;prompt&gt;" to see progress here.</p>
+            </div>
+            {% else %}
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-slate-400 text-xs font-semibold uppercase bg-slate-950/20">
+                            <th class="px-6 py-4">Build ID</th>
+                            <th class="px-6 py-4">Request</th>
+                            <th class="px-6 py-4">Output Type</th>
+                            <th class="px-6 py-4">Status</th>
+                            <th class="px-6 py-4">Score</th>
+                            <th class="px-6 py-4">Date</th>
+                            <th class="px-6 py-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/50">
+                        {% for b in builds %}
+                        <tr class="hover:bg-slate-800/20 transition-colors">
+                            <td class="px-6 py-5 font-mono text-xs text-indigo-400">{{ b.id[:8] }}...</td>
+                            <td class="px-6 py-5 max-w-md truncate font-medium text-slate-200">{{ b.request }}</td>
+                            <td class="px-6 py-5"><span class="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-xs font-mono">{{ b.output_type }}</span></td>
+                            <td class="px-6 py-5">
+                                {% if b.status == "passed" %}
+                                <span class="inline-flex items-center space-x-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-medium">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                                    <span>Passed</span>
+                                </span>
+                                {% elif b.status == "failed" %}
+                                <span class="inline-flex items-center space-x-1.5 text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2.5 py-0.5 rounded-full font-medium">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                                    <span>Failed</span>
+                                </span>
+                                {% else %}
+                                <span class="inline-flex items-center space-x-1.5 text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-medium animate-pulse">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                                    <span>Running</span>
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-5 font-mono text-sm font-semibold">
+                                {% if b.score is not none %}
+                                <span class="{% if b.score >= 8 %}text-emerald-400{% elif b.score >= 5 %}text-amber-400{% else %}text-rose-400{% endif %}">{{ b.score }}/10</span>
+                                {% else %}
+                                <span class="text-slate-500">—</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-6 py-5 text-sm text-slate-400">{{ b.created_at[:16].replace("T", " ") }}</td>
+                            <td class="px-6 py-5 text-right">
+                                <a href="/build/{{ b.id }}" class="inline-flex items-center space-x-1 text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">
+                                    <span>Inspect</span>
+                                    <span>❯</span>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+    </main>
+
+    <footer class="border-t border-slate-800/40 py-8 bg-slate-950/20">
+        <div class="max-w-7xl mx-auto px-6 text-center text-sm text-slate-500">
+            &copy; 2026 Whetstone Dashboard. Active workspace node.
+        </div>
+    </footer>
+</body>
+</html>

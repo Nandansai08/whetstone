@@ -46,8 +46,8 @@ class BuildHistory:
     def create_build(self, request: str, output_type: str) -> str:
         build_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
+        self.prune()
         with self._connect() as conn:
-            self.prune()
             conn.execute(
                 "INSERT INTO builds (id, request, output_type, status, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
