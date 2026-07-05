@@ -66,12 +66,12 @@ def _record_usage(
         cost = None
         if model is not None:
             from builder_agent.config import MODEL_PRICING
+
             pricing = MODEL_PRICING.get(model.model_id)
             if pricing is not None:
-                cost = (
-                    (input_tokens / 1_000_000.0) * pricing["input"]
-                    + (output_tokens / 1_000_000.0) * pricing["output"]
-                )
+                cost = (input_tokens / 1_000_000.0) * pricing["input"] + (
+                    output_tokens / 1_000_000.0
+                ) * pricing["output"]
         _budget.record(
             input_tokens,
             output_tokens,
@@ -94,7 +94,7 @@ def strip_fences(text: str) -> str:
     if text.startswith("```"):
         first_nl = text.find("\n")
         if first_nl != -1:
-            text = text[first_nl + 1:]
+            text = text[first_nl + 1 :]
         if text.endswith("```"):
             text = text[:-3]
     return text.strip()
@@ -110,13 +110,13 @@ def extract_json(text: str) -> str:
         The extracted clean JSON string.
     """
     text = strip_fences(text)
-    obj_start = text.find('{')
-    arr_start = text.find('[')
+    obj_start = text.find("{")
+    arr_start = text.find("[")
     candidates = []
     if obj_start != -1:
-        candidates.append((obj_start, '{', '}'))
+        candidates.append((obj_start, "{", "}"))
     if arr_start != -1:
-        candidates.append((arr_start, '[', ']'))
+        candidates.append((arr_start, "[", "]"))
     candidates.sort(key=lambda x: x[0])
 
     for start, start_char, end_char in candidates:
@@ -128,7 +128,7 @@ def extract_json(text: str) -> str:
             if escape:
                 escape = False
                 continue
-            if c == '\\' and in_string:
+            if c == "\\" and in_string:
                 escape = True
                 continue
             if c == '"' and not escape:
@@ -141,9 +141,13 @@ def extract_json(text: str) -> str:
             elif c == end_char:
                 depth -= 1
                 if depth == 0:
-                    candidate = text[start:i + 1]
-                    json.loads(candidate)
-                    return candidate
+                    candidate = text[start : i + 1]
+
+                    try:
+                        json.loads(candidate)
+                        return candidate
+                    except json.JSONDecodeError:
+                        continue
     return text
 
 
@@ -156,6 +160,7 @@ def _is_transient_error(exc: Exception) -> bool:
     # OpenAI exceptions
     try:
         import openai
+
         if isinstance(exc, (openai.APIConnectionError, openai.APITimeoutError)):
             return True
         if isinstance(exc, openai.APIStatusError):
@@ -168,6 +173,7 @@ def _is_transient_error(exc: Exception) -> bool:
     # Anthropic exceptions
     try:
         import anthropic
+
         if isinstance(exc, (anthropic.APIConnectionError, anthropic.APITimeoutError)):
             return True
         if isinstance(exc, anthropic.APIStatusError):
@@ -180,6 +186,7 @@ def _is_transient_error(exc: Exception) -> bool:
     # Generic httpx exceptions
     try:
         import httpx
+
         if isinstance(
             exc, (httpx.TimeoutException, httpx.ConnectError, httpx.ReadTimeout)
         ):
@@ -202,19 +209,25 @@ def _execute_with_retry(fn: Callable, *args, **kwargs):
             return fn(*args, **kwargs)
         except Exception as exc:
             if attempt < max_retries and _is_transient_error(exc):
-                delay = base_delay * (2 ** attempt)
+                delay = base_delay * (2**attempt)
                 logger.warning(
                     "LLM call failed with transient error: %s. "
                     "Retrying in %.1fs (attempt %d/%d)...",
-                    exc, delay, attempt + 1, max_retries
+                    exc,
+                    delay,
+                    attempt + 1,
+                    max_retries,
                 )
                 cb = get_progress_callback()
                 if cb is not None:
-                    cb("retry", {
-                        "attempt": attempt + 1,
-                        "delay": delay,
-                        "error": str(exc),
-                    })
+                    cb(
+                        "retry",
+                        {
+                            "attempt": attempt + 1,
+                            "delay": delay,
+                            "error": str(exc),
+                        },
+                    )
                 time.sleep(delay)
             else:
                 raise
@@ -236,19 +249,25 @@ def _execute_stream_with_retry(
             return
         except Exception as exc:
             if attempt < max_retries and _is_transient_error(exc):
-                delay = base_delay * (2 ** attempt)
+                delay = base_delay * (2**attempt)
                 logger.warning(
                     "LLM stream call failed with transient error: %s. "
                     "Retrying in %.1fs (attempt %d/%d)...",
-                    exc, delay, attempt + 1, max_retries
+                    exc,
+                    delay,
+                    attempt + 1,
+                    max_retries,
                 )
                 cb = get_progress_callback()
                 if cb is not None:
-                    cb("retry", {
-                        "attempt": attempt + 1,
-                        "delay": delay,
-                        "error": str(exc),
-                    })
+                    cb(
+                        "retry",
+                        {
+                            "attempt": attempt + 1,
+                            "delay": delay,
+                            "error": str(exc),
+                        },
+                    )
                 time.sleep(delay)
             else:
                 raise
@@ -267,7 +286,6 @@ def register_provider(name: str, fn: Callable) -> None:
         fn: Callback function invoked for provider text completion calls.
     """
     _providers[name] = fn
-
 
 
 def register_stream_provider(name: str, fn: Callable) -> None:
@@ -410,11 +428,7 @@ def _ask_anthropic(
     }
     if system:
         msg_kwargs["system"] = [
-            {
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"}
-            }
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
         ]
     response = client.messages.create(**msg_kwargs)
     if hasattr(response, "usage") and response.usage:
@@ -489,9 +503,7 @@ def _default_stream_provider(name: str) -> Callable:
     if name == "openai":
         register_stream_provider("openai", _ask_stream_openai)
         return _ask_stream_openai
-    raise ValueError(
-        f"Unknown stream provider '{name}'."
-    )
+    raise ValueError(f"Unknown stream provider '{name}'.")
 
 
 def _ask_stream_anthropic(
@@ -524,11 +536,7 @@ def _ask_stream_anthropic(
     }
     if system:
         msg_kwargs["system"] = [
-            {
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"}
-            }
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
         ]
 
     with client.messages.stream(**msg_kwargs) as stream:
@@ -643,9 +651,7 @@ def _embed_openai(text: str, *, model: ModelConfig) -> list[float]:
         kwargs["base_url"] = model.base_url
 
     client = openai.OpenAI(**kwargs)
-    response = client.embeddings.create(
-        model=model.model_id, input=[text]
-    )
+    response = client.embeddings.create(model=model.model_id, input=[text])
     return response.data[0].embedding
 
 
