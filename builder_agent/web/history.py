@@ -46,11 +46,12 @@ class BuildHistory:
     def create_build(self, request: str, output_type: str) -> str:
         build_id = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc).isoformat()
+        self.prune()
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO builds (id, request, output_type, status, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (build_id, request, output_type, "running", created_at)
+                (build_id, request, output_type, "running", created_at),
             )
         return build_id
 
@@ -63,9 +64,8 @@ class BuildHistory:
     ):
         with self._connect() as conn:
             conn.execute(
-                "UPDATE builds SET status = ?, score = ?, artifact = ? "
-                "WHERE id = ?",
-                (status, score, artifact, build_id)
+                "UPDATE builds SET status = ?, score = ?, artifact = ? WHERE id = ?",
+                (status, score, artifact, build_id),
             )
 
     def add_attempt(
@@ -133,3 +133,48 @@ class BuildHistory:
         with self._connect() as conn:
             conn.execute("DELETE FROM attempts")
             conn.execute("DELETE FROM builds")
+
+    def prune(self):
+        with self._connect() as conn:
+            conn.execute(
+                """
+            DELETE FROM attempts
+            WHERE build_id IN (
+                SELECT id FROM builds
+                WHERE created_at < datetime('now', ?)
+            )
+            """,
+                (f"-{config.MAX_AGE_DAYS} days",),
+            )
+
+            conn.execute(
+                """
+            DELETE FROM builds
+            WHERE created_at < datetime('now', ?)
+            """,
+                (f"-{config.MAX_AGE_DAYS} days",),
+            )
+
+            rows = conn.execute(
+                """
+            SELECT id
+            FROM builds
+            ORDER BY created_at DESC
+            LIMIT -1 OFFSET ?
+            """,
+                (config.MAX_BUILDS,),
+            ).fetchall()
+
+            if rows:
+                build_ids = [row[0] for row in rows]
+                placeholders = ",".join("?" * len(build_ids))
+
+                conn.execute(
+                    f"DELETE FROM attempts WHERE build_id IN ({placeholders})",
+                    build_ids,
+                )
+
+                conn.execute(
+                    f"DELETE FROM builds WHERE id IN ({placeholders})",
+                    build_ids,
+                )

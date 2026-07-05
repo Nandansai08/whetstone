@@ -112,6 +112,90 @@ Embedders are pluggable components configured via `[memory]` settings. They are 
 
 ---
 
+### 3. Adding a Custom Plugin
+Whetstone supports a pluggable architecture to extend or customize **generation**, **verification**, and **post-processing** behavior.
+
+#### Plugin Directory and Configuration
+By default, Whetstone discovers plugins from:
+1. Python entry points registered under the `whetstone.plugins` group.
+2. A local `plugins/` directory in the current working directory. Any `.py` file placed inside this directory containing a class conforming to one or more of the plugin protocols is loaded automatically.
+
+To disable specific plugins, edit your `.whetstone.toml` file:
+```toml
+[plugins]
+disabled = ["BadPlugin"] # List class names of plugins to disable
+dir = "custom_plugins_directory" # Override default plugins directory
+```
+
+> **Thread safety:** Whetstone may run subtasks concurrently. Plugin instances can be called from multiple threads, so plugins should be stateless or protect shared mutable state appropriately.
+
+#### Plugin Interfaces
+All plugin classes must define one or more of the following interface methods:
+
+* **Generator Plugins**: Intercept or override the default LLM code generation. If `generate()` returns `None`, Whetstone falls back to the default LLM generator.
+  ```python
+  from builder_agent.plugin_system import (
+      register_generator,
+      GenerationContext,
+      PluginContext,
+  )
+
+  @register_generator
+  class MyGenerator:
+      def generate(
+          self,
+          gen_context: GenerationContext,
+          context: PluginContext,
+          on_chunk = None,
+      ) -> str | None:
+          # Return generated code string, or None to fall back to the built-in generator
+          return "print('Hello from custom generator')"
+  ```
+
+* **Verifier Plugins**: Run additive verification steps (e.g. running code quality tools). Return a `PluginVerificationResult` indicating pass/fail status.
+  ```python
+  from builder_agent.plugin_system import (
+      register_verifier,
+      PluginContext,
+      PluginVerificationResult,
+  )
+
+  @register_verifier
+  class MyVerifier:
+      def verify(
+          self,
+          subtask,
+          code: str | dict[str, str],
+          context: PluginContext,
+      ) -> PluginVerificationResult | None:
+          # Perform checks and return verification result
+          return PluginVerificationResult(
+              passed=True,
+              issues=[],
+              exec_output="My custom check passed",
+              blocking=True,
+          )
+  ```
+
+* **Post-Processor Plugins**: Clean up, format, or transform generated code before verification and final output.
+  ```python
+  from builder_agent.plugin_system import (
+      register_post_processor,
+      PluginContext,
+  )
+
+  @register_post_processor
+  class MyFormatter:
+      def post_process_subtask(self, subtask, code: str, context: PluginContext) -> str:
+          # Modify subtask generated code
+          return code + "\n# formatted"
+
+      def post_process_artifact(self, spec, code: str | dict[str, str], context: PluginContext) -> str | dict[str, str]:
+          # Modify final integrated artifact
+          return code
+  ```
+
+---
 ## Testing Guidelines
 
 * **Unit Testing**: All code modifications and features must have corresponding unit tests in the `builder_agent/tests/` directory.

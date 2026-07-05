@@ -54,12 +54,20 @@ TOKEN_BUDGET = 200_000
 MEMORY_DB_PATH = "./builder_memory.db"
 MEMORY_TOP_K = 3
 MEMORY_MIN_SIMILARITY = 0.4
+
+MAX_BUILDS = 1000
+MAX_AGE_DAYS = 30
+
 EMBEDDER = "tfidf"
 MAX_SUBTASKS = 5
 INTERACTIVE_CLARIFY = True
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
 CHECKPOINT_DIR = "./.whetstone_checkpoints"
+
+# Plugin Configuration
+PLUGINS_DISABLED = []
+PLUGIN_DIR = "plugins"
 
 # Sandbox Configuration
 SANDBOX_BACKEND = "subprocess"      # "subprocess" | "container"
@@ -80,7 +88,7 @@ def _load_and_apply_config() -> None:
     global EMBEDDER, MAX_SUBTASKS, MAX_RETRIES, RETRY_DELAY
     global SANDBOX_BACKEND, SANDBOX_ENGINE, SANDBOX_IMAGE
     global SANDBOX_MEMORY_LIMIT, SANDBOX_CPU_LIMIT, SANDBOX_NETWORK_ACCESS
-    global MODEL_PRICING
+    global MODEL_PRICING, PLUGINS_DISABLED, PLUGIN_DIR
 
     user_config_path = pathlib.Path.home() / ".config" / "whetstone" / "config.toml"
     project_config_path = pathlib.Path.cwd() / ".whetstone.toml"
@@ -109,6 +117,8 @@ def _load_and_apply_config() -> None:
             "memory_db_path": "MEMORY_DB_PATH",
             "memory_top_k": "MEMORY_TOP_K",
             "memory_min_similarity": "MEMORY_MIN_SIMILARITY",
+            "max_builds": "MAX_BUILDS",
+            "max_age_days": "MAX_AGE_DAYS",
             "embedder": "EMBEDDER",
             "max_subtasks": "MAX_SUBTASKS",
             "max_retries": "MAX_RETRIES",
@@ -191,6 +201,13 @@ def _load_and_apply_config() -> None:
                             pass
 
                     MODEL_PRICING[model_id] = {"input": input_val, "output": output_val}
+
+        if "plugins" in data and isinstance(data["plugins"], dict):
+            p_data = data["plugins"]
+            if "disabled" in p_data and isinstance(p_data["disabled"], list):
+                PLUGINS_DISABLED = p_data["disabled"]
+            if "dir" in p_data and isinstance(p_data["dir"], str):
+                PLUGIN_DIR = p_data["dir"]
 
 
 _load_and_apply_config()

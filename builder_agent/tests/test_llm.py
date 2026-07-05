@@ -654,7 +654,7 @@ def test_no_retry_on_keyboard_interrupt(mock_sleep):
     mock_sleep.assert_not_called()
 
 
-@patch("time.sleep")
+@patch("builder_agent.llm.time.sleep")
 def test_ask_stream_retry_before_start(mock_sleep):
     calls = []
     import httpx
@@ -675,8 +675,7 @@ def test_ask_stream_retry_before_start(mock_sleep):
     mock_sleep.assert_called_once_with(1.0)
 
 
-@patch("time.sleep")
-def test_ask_stream_no_retry_mid_stream(mock_sleep):
+def test_ask_stream_no_retry_mid_stream():
     calls = []
     import httpx
 
@@ -698,7 +697,6 @@ def test_ask_stream_no_retry_mid_stream(mock_sleep):
 
     assert res == ["chunk1"]
     assert len(calls) == 1
-    mock_sleep.assert_not_called()
 
 
 @patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"})

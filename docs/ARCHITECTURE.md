@@ -216,9 +216,7 @@ The thing that makes it improve *across* tasks, not just within one.
 - **Embedder (pluggable):** default to a local `sentence-transformers`
   (`all-MiniLM-L6-v2`) so no extra API key; allow swapping to Voyage AI. Provide
   a TF-IDF fallback for a zero-ML-dependency build.
-- **Retrieve:** embed `(request + subtask_desc)`, cosine vs stored vectors,
-  return top-k. Feed those records' `fix_summary` + `final_code` to the planner
-  (for decomposition) and the worker (as few-shot guidance).
+- **Retrieve:** exact search optimized using a **two-pass exact retrieval** approach. The first pass fetches only `id` and `embedding` fields to score candidates (supporting vectorized NumPy if available in the environment, falling back to pure Python loops). The second pass fetches the full records (including large text blobs like `final_code` and `failures`) only for the top-k matches, which are then re-sorted in memory. Scalability beyond exact search for extremely large datasets will require a true vector database/ANN index.
 - **Write:** after each subtask resolves, store what failed and what fixed it.
   This is the highest-value field — capture the *delta*, not just the result.
 
