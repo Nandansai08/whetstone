@@ -305,6 +305,12 @@ def test_extract_json_skips_invalid_brace_candidate():
     assert json.loads(result) == [1, 2, 3]
 
 
+def test_extract_json_tries_second_candidate():
+    raw = "{invalid} [1, 2, 3]"
+    result = extract_json(raw)
+    assert json.loads(result) == [1, 2, 3]
+
+
 def test_async_ask_fallback():
     custom_model = ModelConfig("custom_fallback", "some-model")
 
