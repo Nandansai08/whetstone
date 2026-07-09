@@ -43,7 +43,7 @@ dev = [
 docs = [
     "mkdocs>=1.5.0",
     "mkdocs-material>=9.0.0",
-    "mkdocstrings[python]>=0.22.0",
+    "mkdocstrings[python]>=1.0.4",
 ]
 all = [
     "whetstone[anthropic,embeddings,dev,voyage,web,docs]",
