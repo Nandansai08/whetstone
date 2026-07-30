@@ -30,7 +30,7 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.119.0"]
 embeddings = ["sentence-transformers>=2.2.0"]
-voyage = ["voyageai>=0.4.1"]
+voyage = ["voyageai>=0.5.0"]
 web = [
     "fastapi>=0.139.2",
     "uvicorn>=0.51.0",
