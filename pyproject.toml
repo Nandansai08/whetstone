@@ -32,7 +32,7 @@ anthropic = ["anthropic>=0.119.0"]
 embeddings = ["sentence-transformers>=2.2.0"]
 voyage = ["voyageai>=0.4.1"]
 web = [
-    "fastapi>=0.139.2",
+    "fastapi>=0.140.7",
     "uvicorn>=0.51.0",
     "jinja2>=3.0.0",
 ]
