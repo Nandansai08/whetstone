@@ -23,7 +23,7 @@ classifiers = [
     "Topic :: Software Development :: Code Generators",
 ]
 dependencies = [
-    "openai>=3.3.1",
+    "openai>=3.7.0",
     "python-dotenv>=1.2.3",
 ]
 
