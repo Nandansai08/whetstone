@@ -1,0 +1,1477 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="AI-powered code builder">
+      
+      
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../getting_started/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Architecture - Whetstone</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#builder-agent-architecture-build-spec-for-claude-code" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Whetstone" class="md-header__button md-logo" aria-label="Whetstone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Whetstone
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="default" data-md-color-primary="teal" data-md-color-accent="teal"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Whetstone" class="md-nav__button md-logo" aria-label="Whetstone" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Whetstone
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#project-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-contracts-schemaspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data contracts (schemas.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#component-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component contracts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#control-loop-per-subtask-with-the-guards-that-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Control loop (per subtask) — with the guards that matter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verifier-design-the-crux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verifier design (the crux)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-subsystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory subsystem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-configpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config (config.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-milestones-build-test-in-this-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build milestones (build + test in this order)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-trade-offs-make-these-explicit-in-code-comments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key trade-offs (make these explicit in code comments)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting_started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorials
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/budget/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    budget
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/clarify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    clarify
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/embedders/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    embedders
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/generate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    generate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/integrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    integrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/llm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    llm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/orchestrate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    orchestrate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/sandbox/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    sandbox
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/schemas/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    schemas
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/verify/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    verify
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#project-layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Project layout
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#data-contracts-schemaspy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data contracts (schemas.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#component-contracts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component contracts
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#control-loop-per-subtask-with-the-guards-that-matter" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Control loop (per subtask) — with the guards that matter
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verifier-design-the-crux" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Verifier design (the crux)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#memory-subsystem" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory subsystem
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#config-configpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config (config.py)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-milestones-build-test-in-this-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build milestones (build + test in this order)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#key-trade-offs-make-these-explicit-in-code-comments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Key trade-offs (make these explicit in code comments)
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="builder-agent-architecture-build-spec-for-claude-code">Builder Agent — Architecture &amp; Build Spec (for Claude Code)</h1>
+<blockquote>
+<p><strong>How to use this doc:</strong> Build in milestone order (M1 → M5). Each milestone is
+independently testable — write its unit tests and make them pass before moving
+on. Don't build the whole thing at once. Modules that touch the LLM should be
+behind a thin wrapper so they can be mocked in tests (no live API calls in the
+test suite). Use Python 3.11+, the <code>anthropic</code> SDK, and dataclasses.</p>
+</blockquote>
+<p>A meta-agent: user says "I want to build X" → the agent clarifies it, <strong>plans</strong>
+it into sub-tasks, builds each with a worker, <strong>verifies</strong> with executable
+tests + a cross-model judge, refines on failure, and <strong>remembers</strong> what worked
+so it improves across runs.</p>
+<pre><code>                 ┌──────────┐
+   request  ───▶ │ CLARIFY  │  request -&gt; Spec (criteria + assumptions)
+                 └────┬─────┘
+                      ▼
+                 ┌──────────┐   reads similar past builds
+                 │  PLAN    │◀──────────────┐
+                 └────┬─────┘                │
+                      │ Plan (ordered SubTasks)
+                      ▼                       │
+        for each SubTask:                     │
+        ┌───────────────────────────┐        │
+        │  GENERATE ─▶ SELF-CRITIQUE │        │   ┌──────────┐
+        │       ▲          │         │◀───────┼───│  MEMORY  │
+        │       │          ▼         │ hints  │   │ (SQLite +│
+        │   feedback    VERIFY       │        │   │ embeds)  │
+        │       │   (tests + judge)  │        │   └────▲─────┘
+        │       └──── fail ◀──┘      │             writes │
+        └───────────┬───────────────┘                    │
+                    │ pass / plateau / budget             │
+                    ▼                                      │
+                 ┌──────────┐                              │
+                 │INTEGRATE │ assemble sub-outputs ────────┘
+                 └────┬─────┘
+                      ▼
+                 ┌──────────┐
+                 │FINAL     │ verify the whole, then NOTIFY
+                 │VERIFY    │
+                 └──────────┘
+</code></pre>
+<hr />
+<h2 id="project-layout">Project layout</h2>
+<pre><code>builder_agent/
+  config.py          # models, thresholds, budgets, paths
+  llm.py             # Anthropic wrapper: ask(), embed(); the ONLY API surface
+  schemas.py         # dataclasses (contracts below)
+  sandbox.py         # safe-ish subprocess execution with timeout
+  clarify.py         # request -&gt; Spec
+  plan.py            # Spec (+memory) -&gt; Plan
+  generate.py        # SubTask (+feedback, +memory hints) -&gt; code; self_critique()
+  verify.py          # test-first tests + execute + cross-model judge -&gt; Verdict
+  memory.py          # store/retrieve past builds (pluggable embedder)
+  integrate.py       # combine sub-task outputs -&gt; final artifact
+  orchestrate.py     # the state machine wiring it all together
+  cli.py             # entrypoint: python -m builder_agent &quot;build a...&quot;
+  tests/             # one test module per component, LLM mocked
+</code></pre>
+<hr />
+<h2 id="data-contracts-schemaspy">Data contracts (<code>schemas.py</code>)</h2>
+<pre><code class="language-python">@dataclass
+class Spec:
+    request: str
+    description: str                 # concrete spec prose
+    acceptance_criteria: list[str]   # objective, checkable statements
+    assumptions: list[str]
+    output_type: str                 # &quot;python_module&quot; | &quot;sql&quot; | &quot;pipeline&quot;
+
+@dataclass
+class SubTask:
+    id: str
+    description: str
+    acceptance_criteria: list[str]
+    depends_on: list[str]            # ids of prerequisite subtasks
+
+@dataclass
+class Plan:
+    subtasks: list[SubTask]          # topologically ordered
+
+@dataclass
+class Verdict:
+    passed: bool                     # tests_passed AND score &gt;= threshold
+    score: int                       # 0-10 from judge
+    tests_passed: bool
+    issues: list[str]                # concrete, become next-round feedback
+    exec_output: str
+
+@dataclass
+class Attempt:
+    iteration: int
+    code: str
+    verdict: Verdict
+
+@dataclass
+class MemoryRecord:
+    request: str
+    output_type: str
+    subtask_desc: str
+    failures: list[str]              # what went wrong
+    fix_summary: str                 # what resolved it
+    final_code: str
+    embedding: list[float]           # of (request + subtask_desc)
+</code></pre>
+<hr />
+<h2 id="component-contracts">Component contracts</h2>
+<pre><code class="language-python"># clarify.py
+def clarify(request: str, *, interactive: bool = True) -&gt; Spec
+    # one round of &lt;=3 high-value questions; sensible defaults otherwise.
+    # Must populate acceptance_criteria — they drive verification downstream.
+
+# plan.py
+def plan(spec: Spec, memory: &quot;Memory&quot;) -&gt; Plan
+    # decompose into ordered subtasks. Single-step tasks =&gt; a one-item plan.
+    # Inject similar past builds from memory as planning context.
+
+# generate.py
+def generate(subtask: SubTask, spec: Spec,
+             feedback: str | None = None,
+             memory_hints: list[MemoryRecord] | None = None) -&gt; str
+    # worker. Returns code for ONE subtask. feedback carries exact prior
+    # failures; memory_hints carries fixes that worked on similar tasks.
+
+def self_critique(code: str, subtask: SubTask) -&gt; str
+    # worker reviews + improves its own draft BEFORE the verifier sees it.
+
+# verify.py
+def make_tests(subtask: SubTask, code: str) -&gt; str   # test-first: from criteria
+def verify(subtask: SubTask, code: str) -&gt; Verdict
+    # 1) run independently-generated tests in the sandbox (objective)
+    # 2) judge with JUDGE_MODEL (!= worker model) against the criteria rubric
+    # passed = tests_passed AND score &gt;= SCORE_THRESHOLD
+
+# sandbox.py
+def run_code(code: str, timeout: int) -&gt; tuple[bool, str]   # (passed, output)
+
+# memory.py  (class Memory)
+def store(self, record: MemoryRecord) -&gt; None
+def retrieve(self, query: str, k: int) -&gt; list[MemoryRecord]  # cosine top-k
+
+# integrate.py
+def integrate(spec: Spec, outputs: dict[str, str]) -&gt; str
+    # assemble per-subtask code into one artifact (modules/files).
+
+# orchestrate.py
+def orchestrate(request: str) -&gt; dict   # the state machine; returns result
+</code></pre>
+<hr />
+<h2 id="control-loop-per-subtask-with-the-guards-that-matter">Control loop (per subtask) — with the guards that matter</h2>
+<pre><code>attempt = 0; best = None; feedback = None
+hints = memory.retrieve(subtask.description, k=MEMORY_TOP_K)
+while attempt &lt; MAX_ITERATIONS:
+    code   = generate(subtask, spec, feedback, hints)
+    code   = self_critique(code, subtask)
+    v      = verify(subtask, code)
+    track best by score
+    if v.passed: break
+    if plateaued(history, patience=PLATEAU_PATIENCE):  # score not improving
+        escalate()        # switch to stronger model OR ask the user one Q
+    if over_budget():     # cumulative token budget
+        break
+    feedback = &quot;\n&quot;.join(v.issues)   # objective failures first
+    attempt += 1
+return best
+</code></pre>
+<p>Guards, explicitly:
+- <strong>MAX_ITERATIONS</strong> — hard stop per subtask.
+- <strong>Plateau detection</strong> — if score doesn't improve by ≥1 over <code>PLATEAU_PATIENCE</code>
+  iterations, stop refining blindly: escalate to a stronger worker model, or
+  surface one targeted question to the user. Don't burn calls on a stuck loop.
+- <strong>Token budget</strong> — track cumulative usage; abort gracefully when exceeded.
+- <strong>Best-so-far</strong> — always return the highest-scoring attempt, never assume the
+  last one is best. On a non-pass exit, flag it honestly.</p>
+<hr />
+<h2 id="verifier-design-the-crux">Verifier design (the crux)</h2>
+<p>Three independent strengthenings, all cheap:
+1. <strong>Test-first</strong> — <code>make_tests()</code> derives executable tests from the subtask's
+   <code>acceptance_criteria</code> <em>before</em> generation, so the worker aims at a fixed
+   target. Run them in the sandbox = objective pass/fail.
+2. <strong>Cross-model judge</strong> — <code>JUDGE_MODEL</code> differs from <code>WORKER_MODEL</code> so their
+   blind spots don't overlap (a model grading itself is too lenient).
+3. <strong>Self-critique</strong> — worker revises once before verification; consistent
+   quality bump for one extra call.</p>
+<p><code>passed</code> requires <strong>both</strong> the tests to pass <strong>and</strong> the judge ≥ threshold.
+Objective failure short-circuits the judge.</p>
+<hr />
+<h2 id="memory-subsystem">Memory subsystem</h2>
+<p>The thing that makes it improve <em>across</em> tasks, not just within one.</p>
+<ul>
+<li><strong>Storage:</strong> SQLite table of <code>MemoryRecord</code> rows; embeddings stored as JSON.</li>
+<li><strong>Embedder (pluggable):</strong> default to a local <code>sentence-transformers</code>
+  (<code>all-MiniLM-L6-v2</code>) so no extra API key; allow swapping to Voyage AI. Provide
+  a TF-IDF fallback for a zero-ML-dependency build.</li>
+<li><strong>Retrieve:</strong> exact search optimized using a <strong>two-pass exact retrieval</strong> approach. The first pass fetches only <code>id</code> and <code>embedding</code> fields to score candidates (supporting vectorized NumPy if available in the environment, falling back to pure Python loops). The second pass fetches the full records (including large text blobs like <code>final_code</code> and <code>failures</code>) only for the top-k matches, which are then re-sorted in memory. Scalability beyond exact search for extremely large datasets will require a true vector database/ANN index.</li>
+<li><strong>Write:</strong> after each subtask resolves, store what failed and what fixed it.
+  This is the highest-value field — capture the <em>delta</em>, not just the result.</li>
+</ul>
+<hr />
+<h2 id="config-configpy">Config (<code>config.py</code>)</h2>
+<pre><code class="language-python">WORKER_MODEL     = &quot;claude-sonnet-4-6&quot;
+JUDGE_MODEL      = &quot;claude-opus-4-8&quot;     # different from worker on purpose
+PLANNER_MODEL    = &quot;claude-sonnet-4-6&quot;
+ESCALATION_MODEL = &quot;claude-opus-4-8&quot;     # used when a subtask plateaus
+MAX_ITERATIONS   = 4
+SCORE_THRESHOLD  = 8
+PLATEAU_PATIENCE = 2
+EXEC_TIMEOUT     = 10
+TOKEN_BUDGET     = 200_000               # per request, cumulative
+MEMORY_DB_PATH   = &quot;./builder_memory.db&quot;
+MEMORY_TOP_K     = 3
+</code></pre>
+<p>(Verify the exact current model strings against the Anthropic docs at build time.)</p>
+<hr />
+<h2 id="build-milestones-build-test-in-this-order">Build milestones (build + test in this order)</h2>
+<ul>
+<li><strong>M1 — Foundations.</strong> <code>config</code>, <code>schemas</code>, <code>llm</code> wrapper (mockable), <code>sandbox</code>.
+  Test: dataclasses round-trip; sandbox runs good code (pass), bad code (fail),
+  infinite loop (timeout). No live API needed.</li>
+<li><strong>M2 — Single-task loop.</strong> <code>clarify</code>, <code>generate</code> + <code>self_critique</code>, <code>verify</code>
+  (test-first + cross-model judge), and an <code>orchestrate</code> that runs ONE subtask.
+  Test: with the LLM mocked, a passing verdict exits the loop; a failing one
+  feeds issues back; the loop respects MAX_ITERATIONS.</li>
+<li><strong>M3 — Memory.</strong> <code>memory.py</code> store/retrieve with the pluggable embedder.
+  Test: store N records, retrieve returns the most similar; embedder swap works.</li>
+<li><strong>M4 — Planner + integration.</strong> <code>plan</code>, <code>integrate</code>, and a multi-subtask
+  <code>orchestrate</code> with dependency ordering + final verify. Test: a 2-subtask plan
+  builds, integrates, and final-verifies.</li>
+<li><strong>M5 — Guards + CLI.</strong> Plateau detection, token budget, escalation, <code>cli.py</code>.
+  Test: plateau triggers escalation; budget abort returns best-so-far.</li>
+</ul>
+<p>Each milestone's acceptance bar: its unit tests pass and the loop behaves
+correctly with the LLM mocked.</p>
+<hr />
+<h2 id="key-trade-offs-make-these-explicit-in-code-comments">Key trade-offs (make these explicit in code comments)</h2>
+<table>
+<thead>
+<tr>
+<th>Decision</th>
+<th>Why</th>
+<th>Revisit when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Raw SDK, no agent framework</td>
+<td>Keeps control flow transparent</td>
+<td>State/persistence grows → LangGraph</td>
+</tr>
+<tr>
+<td>SQLite + local embeddings for memory</td>
+<td>Zero infra, no extra API key</td>
+<td>Scale/multi-user → a real vector DB</td>
+</tr>
+<tr>
+<td>Cross-model judge</td>
+<td>Independent blind spots</td>
+<td>Judge unreliable → invest in tests</td>
+</tr>
+<tr>
+<td>Subprocess sandbox</td>
+<td>Fine for local dev</td>
+<td><strong>Untrusted input → real sandbox</strong></td>
+</tr>
+<tr>
+<td>Synchronous loop</td>
+<td>Easy to reason about</td>
+<td>Long builds → async/job queue</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Security (non-negotiable):</strong> the sandbox executes model-generated code via
+subprocess + timeout — that is NOT isolation. Before this touches untrusted
+input or runs anywhere sensitive, swap in a container with no network and
+resource caps.</p>
+<p><strong>Biggest lever:</strong> the more of "is it good?" you convert into "does it pass this
+check?", the more reliable the whole loop becomes. For data/SQL/pipeline output
+types, make the verifier domain-specific — schema checks, row-count/null
+assertions, dbt tests, <code>EXPLAIN</code> plans — instead of leaning on the LLM judge.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.expand", "navigation.sections", "navigation.top", "search.suggest", "search.highlight"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
